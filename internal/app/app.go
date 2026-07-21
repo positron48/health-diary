@@ -63,7 +63,7 @@ func (a *App) Run(ctx context.Context, shutdownTimeout time.Duration) error {
 		if pool == nil {
 			return fmt.Errorf("telegram requires DATABASE_URL")
 		}
-		handler := bot.NewHandler(ingest.New(pool, cipher, a.config.JobMaxAttempts), a.config.Telegram.AllowedUserIDs, a.logger)
+		handler := bot.NewHandler(ingest.New(pool, cipher, a.config.JobMaxAttempts), a.auth, a.config.Telegram.AllowedUserIDs, a.logger)
 		var extractor llm.Extractor = llm.Fake{}
 		if a.config.LLMAPIKey != "" {
 			extractor = llm.NewOpenAICompatible(a.config.LLMBaseURL, a.config.LLMModel, a.config.LLMAPIKey, &http.Client{Timeout: 30 * time.Second})

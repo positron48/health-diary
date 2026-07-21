@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"strings"
 
+	"health-diary/internal/auth"
 	"health-diary/internal/ingest"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
@@ -13,12 +14,13 @@ import (
 
 type Handler struct {
 	ingest  *ingest.Service
+	auth    *auth.Service
 	allowed map[int64]struct{}
 	log     *slog.Logger
 }
 
-func NewHandler(ingest *ingest.Service, allowed map[int64]struct{}, log *slog.Logger) *Handler {
-	return &Handler{ingest: ingest, allowed: allowed, log: log}
+func NewHandler(ingest *ingest.Service, authService *auth.Service, allowed map[int64]struct{}, log *slog.Logger) *Handler {
+	return &Handler{ingest: ingest, auth: authService, allowed: allowed, log: log}
 }
 
 func (h *Handler) Handle(ctx context.Context, bot *tgbotapi.BotAPI, update tgbotapi.Update) error {
@@ -38,7 +40,7 @@ func (h *Handler) Handle(ctx context.Context, bot *tgbotapi.BotAPI, update tgbot
 		return nil
 	}
 	if strings.HasPrefix(text, "/") {
-		return h.command(bot, m.Chat.ID, text)
+		return h.command(ctx, bot, m.Chat.ID, int64(m.From.ID), text)
 	}
 	_, err := h.ingest.CaptureTelegramText(ctx, ingest.Capture{UpdateID: int64(update.UpdateID), TelegramUserID: int64(m.From.ID), MessageID: int64(m.MessageID), Username: m.From.UserName, Text: text, SentAt: m.Time()})
 	if err != nil {
@@ -48,7 +50,7 @@ func (h *Handler) Handle(ctx context.Context, bot *tgbotapi.BotAPI, update tgbot
 	return err
 }
 
-func (h *Handler) command(bot *tgbotapi.BotAPI, chatID int64, text string) error {
+func (h *Handler) command(ctx context.Context, bot *tgbotapi.BotAPI, chatID, telegramUserID int64, text string) error {
 	command := strings.Fields(strings.TrimPrefix(text, "/"))
 	if len(command) == 0 {
 		return nil
@@ -56,7 +58,16 @@ func (h *Handler) command(bot *tgbotapi.BotAPI, chatID int64, text string) error
 	var reply string
 	switch strings.Split(command[0], "@")[0] {
 	case "start":
-		reply = "Дневник здоровья: отправьте сообщение о самочувствии, боли, лекарствах или активности."
+		if len(command) == 2 && strings.HasPrefix(command[1], "login_") && h.auth != nil {
+			code, err := h.auth.BindTelegram(ctx, strings.TrimPrefix(command[1], "login_"), telegramUserID)
+			if err != nil {
+				reply = "Ссылка для входа недействительна или истекла."
+			} else {
+				reply = "Код для входа: " + code
+			}
+		} else {
+			reply = "Дневник здоровья: отправьте сообщение о самочувствии, боли, лекарствах или активности."
+		}
 	case "help":
 		reply = "Напишите обычным текстом. Например: «В 15:00 заболела голова справа, 6 из 10. Выпил ибупрофен 400»."
 	case "privacy":
