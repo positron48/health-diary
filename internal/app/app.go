@@ -141,6 +141,7 @@ func (a *App) Handler() http.Handler {
 	mux.Handle("DELETE /auth/session", a.requireSession(http.HandlerFunc(a.logout)))
 	mux.Handle("GET /api/me", a.requireSession(http.HandlerFunc(a.me)))
 	mux.Handle("GET /calendar", a.requireSession(http.HandlerFunc(a.calendar)))
+	mux.Handle("GET /analytics/summary", a.requireSession(http.HandlerFunc(a.analyticsSummary)))
 	mux.Handle("GET /events", a.requireSession(http.HandlerFunc(a.events)))
 	mux.Handle("GET /batches/pending", a.requireSession(http.HandlerFunc(a.pendingBatches)))
 	mux.Handle("GET /exports", a.requireSession(http.HandlerFunc(a.exportEvents)))
@@ -346,6 +347,30 @@ func (a *App) calendar(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	_ = json.NewEncoder(w).Encode(map[string]any{"month": month.Format("2006-01"), "timezone": user.Timezone, "events": events})
+}
+
+func (a *App) analyticsSummary(w http.ResponseWriter, r *http.Request) {
+	user := r.Context().Value(sessionContextKey{}).(auth.SessionUser)
+	days, err := strconv.Atoi(r.URL.Query().Get("days"))
+	if err != nil || (days != 7 && days != 30 && days != 60 && days != 90) {
+		http.Error(w, "days must be 7, 30, 60 or 90", http.StatusBadRequest)
+		return
+	}
+	loc, err := time.LoadLocation(user.Timezone)
+	if err != nil {
+		http.Error(w, "invalid user timezone", 500)
+		return
+	}
+	to := time.Now().In(loc)
+	from := to.AddDate(0, 0, -days)
+	events, err := analytics.New(a.db).Events(r.Context(), user.ID, from.UTC(), to.UTC())
+	if err != nil {
+		http.Error(w, "unable to calculate analytics", 500)
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	_ = json.NewEncoder(w).Encode(analytics.BuildSummary(events, from, to, user.Timezone))
 }
 
 type sessionContextKey struct{}
