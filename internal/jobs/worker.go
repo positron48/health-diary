@@ -43,10 +43,31 @@ func (w *Worker) RunOnce(ctx context.Context) error {
 		return w.queue.Finish(ctx, job.ID, false, "invalid_payload")
 	}
 	if err := w.extract(ctx, payload.EntryID, job.Attempts); err != nil {
-		_ = w.queue.Finish(ctx, job.ID, true, "extraction_failed")
+		if finishErr := w.queue.Finish(ctx, job.ID, true, "extraction_failed"); finishErr != nil {
+			return finishErr
+		}
+		if job.Attempts >= job.MaxAttempts {
+			if notificationErr := w.enqueueExtractionFailureNotification(ctx, payload.EntryID); notificationErr != nil {
+				return notificationErr
+			}
+		}
 		return err
 	}
 	return w.queue.Finish(ctx, job.ID, false, "")
+}
+
+// enqueueExtractionFailureNotification tells Telegram users when all parsing
+// attempts are exhausted. The raw entry remains encrypted and retryable from
+// the web/API; neither its text nor provider output is included in the notice.
+func (w *Worker) enqueueExtractionFailureNotification(ctx context.Context, entryID string) error {
+	_, err := w.db.Exec(ctx, `INSERT INTO outbox_messages(user_id,kind,payload)
+		SELECT e.user_id, 'telegram_processing_failed', jsonb_build_object(
+			'chat_id', u.telegram_user_id,
+			'text', 'Не удалось обработать запись автоматически. Она сохранена; попробуйте отправить её ещё раз позже.'
+		)
+		FROM journal_entries e JOIN users u ON u.id=e.user_id
+		WHERE e.id=$1 AND e.deleted_at IS NULL AND u.telegram_user_id IS NOT NULL`, entryID)
+	return err
 }
 
 func (w *Worker) deleteUser(ctx context.Context, job *Job) error {

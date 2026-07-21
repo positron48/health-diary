@@ -30,6 +30,7 @@ func main() {
 		models = []string{cfg.LLMModel}
 	}
 	fixtures := []fixture{
+		{"Сегодня в 15:00 болела голова 6/10, выпил ибупрофен 400 мг", []string{"pain_observation", "medication_intake"}},
 		{"Тестовая запись: голова болит.", []string{"pain_observation"}},
 		{"Тестовая запись: принял ибупрофен 200 мг.", []string{"medication_intake"}},
 		{"Тестовая запись: заметка без симптомов.", []string{"note"}},

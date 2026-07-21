@@ -19,7 +19,7 @@ func DispatchOneOutbox(ctx context.Context, api *tgbotapi.BotAPI, db *pgxpool.Po
 	defer tx.Rollback(ctx)
 	var id string
 	var payload json.RawMessage
-	err = tx.QueryRow(ctx, `WITH candidate AS (SELECT id FROM outbox_messages WHERE kind='telegram_confirmation' AND status IN ('queued','retryable_failed') AND available_at<=now() ORDER BY available_at,id FOR UPDATE SKIP LOCKED LIMIT 1) UPDATE outbox_messages o SET status='running',attempts=attempts+1,updated_at=now() FROM candidate WHERE o.id=candidate.id RETURNING o.id::text,o.payload`).Scan(&id, &payload)
+	err = tx.QueryRow(ctx, `WITH candidate AS (SELECT id FROM outbox_messages WHERE kind IN ('telegram_confirmation','telegram_processing_failed') AND status IN ('queued','retryable_failed') AND available_at<=now() ORDER BY available_at,id FOR UPDATE SKIP LOCKED LIMIT 1) UPDATE outbox_messages o SET status='running',attempts=attempts+1,updated_at=now() FROM candidate WHERE o.id=candidate.id RETURNING o.id::text,o.payload`).Scan(&id, &payload)
 	if err == pgx.ErrNoRows {
 		return nil
 	}
@@ -39,7 +39,9 @@ func DispatchOneOutbox(ctx context.Context, api *tgbotapi.BotAPI, db *pgxpool.Po
 		return finishOutbox(ctx, db, id, false, "invalid_payload")
 	}
 	config := tgbotapi.NewMessage(message.ChatID, message.Text)
-	config.ReplyMarkup = tgbotapi.NewInlineKeyboardMarkup(tgbotapi.NewInlineKeyboardRow(tgbotapi.NewInlineKeyboardButtonData("Верно", "v1:"+message.ConfirmToken+":confirm"), tgbotapi.NewInlineKeyboardButtonData("Отклонить", "v1:"+message.RejectToken+":reject")))
+	if message.ConfirmToken != "" && message.RejectToken != "" {
+		config.ReplyMarkup = tgbotapi.NewInlineKeyboardMarkup(tgbotapi.NewInlineKeyboardRow(tgbotapi.NewInlineKeyboardButtonData("Верно", "v1:"+message.ConfirmToken+":confirm"), tgbotapi.NewInlineKeyboardButtonData("Отклонить", "v1:"+message.RejectToken+":reject")))
+	}
 	if _, err = api.Send(config); err != nil {
 		return finishOutbox(ctx, db, id, true, "telegram_send_failed")
 	}

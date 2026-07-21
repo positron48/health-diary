@@ -6,7 +6,8 @@
 - Initial production access is restricted by `TELEGRAM_ALLOWED_USER_IDS`.
 - Unknown users receive a generic unavailable message; their health text is not persisted or sent to LLM.
 - `/privacy` explains Telegram cloud-chat and LLM provider boundaries before first capture.
-- Production uses webhook secret verification; local development uses long polling.
+- Production and local development use long polling; the Telegram client is
+  routed through its dedicated SOCKS5 proxy in production.
 
 ## 2. Commands
 
@@ -40,6 +41,8 @@ stateDiagram-v2
 ```
 
 Bot acknowledgement and final confirmation are separate messages so Telegram response latency is independent of LLM latency.
+If every extraction attempt fails, the bot sends a separate failure notice that
+the encrypted entry is retained; it never exposes provider errors or entry text.
 
 ## 4. Confirmation UX
 
