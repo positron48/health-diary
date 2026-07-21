@@ -10,7 +10,7 @@ logs:
 	docker compose logs -f
 
 migrate:
-	docker compose run --rm app /app/health-diary-migrate
+	docker compose run --rm app /app/health-diary-migrate up
 
 test:
 	go test ./...

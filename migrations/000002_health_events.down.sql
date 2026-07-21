@@ -1,0 +1,12 @@
+DROP TABLE IF EXISTS measurements;
+DROP TABLE IF EXISTS food_drink_records;
+DROP TABLE IF EXISTS sleep_records;
+DROP TABLE IF EXISTS daily_checkins;
+DROP TABLE IF EXISTS activities;
+DROP TABLE IF EXISTS medication_intakes;
+DROP TABLE IF EXISTS pain_observations;
+DROP TABLE IF EXISTS symptom_episodes;
+DROP TABLE IF EXISTS event_revisions;
+DROP TABLE IF EXISTS health_events;
+DROP TABLE IF EXISTS event_batches;
+DROP TABLE IF EXISTS extraction_runs;

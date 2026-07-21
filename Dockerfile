@@ -18,6 +18,7 @@ FROM alpine:3.22
 RUN addgroup -S app && adduser -S -G app app
 COPY --from=build /out/health-diary /app/health-diary
 COPY --from=build /out/health-diary-migrate /app/health-diary-migrate
+COPY migrations/ /app/migrations/
 USER app
 EXPOSE 8080 9090
-ENTRYPOINT ["/app/health-diary"]
+CMD ["/app/health-diary"]
