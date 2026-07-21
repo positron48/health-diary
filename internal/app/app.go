@@ -102,6 +102,11 @@ func (a *App) Handler() http.Handler {
 		w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
 		writeText(w, http.StatusOK, "health_diary_up 1\n")
 	})
+	mux.HandleFunc("GET /api/health-data", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Cache-Control", "no-store")
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		_, _ = w.Write([]byte(`{"items":[]}`))
+	})
 	web, err := fs.Sub(webAssets, "web/dist")
 	if err != nil {
 		panic(err)
