@@ -8,8 +8,10 @@ import (
 
 	"health-diary/internal/auth"
 	"health-diary/internal/ingest"
+	"health-diary/internal/journal"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type Handler struct {
@@ -17,13 +19,17 @@ type Handler struct {
 	auth    *auth.Service
 	allowed map[int64]struct{}
 	log     *slog.Logger
+	db      *pgxpool.Pool
 }
 
-func NewHandler(ingest *ingest.Service, authService *auth.Service, allowed map[int64]struct{}, log *slog.Logger) *Handler {
-	return &Handler{ingest: ingest, auth: authService, allowed: allowed, log: log}
+func NewHandler(db *pgxpool.Pool, ingest *ingest.Service, authService *auth.Service, allowed map[int64]struct{}, log *slog.Logger) *Handler {
+	return &Handler{db: db, ingest: ingest, auth: authService, allowed: allowed, log: log}
 }
 
 func (h *Handler) Handle(ctx context.Context, bot *tgbotapi.BotAPI, update tgbotapi.Update) error {
+	if update.CallbackQuery != nil {
+		return h.callback(ctx, bot, update.CallbackQuery)
+	}
 	if update.Message == nil || update.Message.From == nil {
 		return nil
 	}
@@ -48,6 +54,30 @@ func (h *Handler) Handle(ctx context.Context, bot *tgbotapi.BotAPI, update tgbot
 	}
 	_, err = bot.Send(tgbotapi.NewMessage(m.Chat.ID, "Запись принята. Скоро пришлю распознанные события для подтверждения."))
 	return err
+}
+
+func (h *Handler) callback(ctx context.Context, api *tgbotapi.BotAPI, callback *tgbotapi.CallbackQuery) error {
+	if callback.From == nil {
+		return nil
+	}
+	if _, ok := h.allowed[callback.From.ID]; !ok {
+		return nil
+	}
+	parts := strings.Split(callback.Data, ":")
+	if len(parts) != 3 || parts[0] != "v1" || (parts[2] != "confirm" && parts[2] != "reject") {
+		_, err := api.Request(tgbotapi.NewCallback(callback.ID, "Действие недоступно."))
+		return err
+	}
+	err := journal.ApplyTelegramAction(ctx, h.db, int64(callback.From.ID), parts[1], parts[2])
+	message := "Готово: события подтверждены."
+	if parts[2] == "reject" {
+		message = "Черновик отклонён."
+	}
+	if err != nil {
+		message = "Это действие уже выполнено или ссылка устарела."
+	}
+	_, requestErr := api.Request(tgbotapi.NewCallback(callback.ID, message))
+	return requestErr
 }
 
 func (h *Handler) command(ctx context.Context, bot *tgbotapi.BotAPI, chatID, telegramUserID int64, username, text string) error {

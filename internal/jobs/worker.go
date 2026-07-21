@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"health-diary/internal/auth"
 	"health-diary/internal/crypto"
 	"health-diary/internal/llm"
 
@@ -51,8 +52,9 @@ func (w *Worker) extract(ctx context.Context, entryID string) error {
 	}
 	defer tx.Rollback(ctx)
 	var userID string
+	var telegramUserID *int64
 	var sealed []byte
-	if err := tx.QueryRow(ctx, `SELECT user_id::text,raw_text_ciphertext FROM journal_entries WHERE id=$1 AND deleted_at IS NULL FOR UPDATE`, entryID).Scan(&userID, &sealed); err != nil {
+	if err := tx.QueryRow(ctx, `SELECT e.user_id::text,u.telegram_user_id,e.raw_text_ciphertext FROM journal_entries e JOIN users u ON u.id=e.user_id WHERE e.id=$1 AND e.deleted_at IS NULL FOR UPDATE`, entryID).Scan(&userID, &telegramUserID, &sealed); err != nil {
 		return err
 	}
 	plain, err := w.cipher.Decrypt(sealed, []byte(userID))
@@ -84,6 +86,23 @@ func (w *Worker) extract(ctx context.Context, entryID string) error {
 		}
 		if _, err := tx.Exec(ctx, `INSERT INTO health_events(user_id,batch_id,entry_id,kind,occurred_at,time_precision,client_ref,attributes) VALUES($1,$2,$3,$4,$5,$6,$7,$8)`, userID, batchID, entryID, event.Kind, event.OccurredAt, event.TimePrecision, event.ClientRef, attributes); err != nil {
 			return fmt.Errorf("insert event: %w", err)
+		}
+	}
+	if telegramUserID != nil {
+		confirmToken, confirmHash, err := auth.NewOpaqueToken()
+		if err != nil {
+			return err
+		}
+		rejectToken, rejectHash, err := auth.NewOpaqueToken()
+		if err != nil {
+			return err
+		}
+		if _, err = tx.Exec(ctx, `INSERT INTO telegram_callback_actions(token_hash,user_id,batch_id,batch_version,action,expires_at) VALUES($1,$2,$3,1,'confirm',now()+interval '7 days'),($4,$2,$3,1,'reject',now()+interval '7 days')`, confirmHash, userID, batchID, rejectHash); err != nil {
+			return err
+		}
+		payload := map[string]any{"chat_id": *telegramUserID, "text": fmt.Sprintf("Распознано событий: %d. Подтвердите только те факты, которые верны.", len(result.Events)), "confirm_token": confirmToken, "reject_token": rejectToken}
+		if _, err = tx.Exec(ctx, `INSERT INTO outbox_messages(user_id,kind,payload) VALUES($1,'telegram_confirmation',$2)`, userID, payload); err != nil {
+			return err
 		}
 	}
 	_, err = tx.Exec(ctx, `UPDATE journal_entries SET processing_status='parsed' WHERE id=$1`, entryID)
