@@ -117,6 +117,7 @@ func (a *App) Handler() http.Handler {
 	})
 	mux.HandleFunc("POST /auth/challenges", a.createChallenge)
 	mux.HandleFunc("POST /auth/challenges/{id}/verify", a.verifyChallenge)
+	mux.Handle("GET /api/me", a.requireSession(http.HandlerFunc(a.me)))
 	mux.HandleFunc("GET /api/health-data", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
@@ -128,6 +129,35 @@ func (a *App) Handler() http.Handler {
 	}
 	mux.Handle("GET /", http.FileServer(http.FS(web)))
 	return mux
+}
+
+type sessionContextKey struct{}
+
+func (a *App) requireSession(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if a.auth == nil {
+			http.Error(w, "database is unavailable", http.StatusServiceUnavailable)
+			return
+		}
+		cookie, err := r.Cookie(a.config.SessionCookieName)
+		if err != nil {
+			http.Error(w, "authentication required", http.StatusUnauthorized)
+			return
+		}
+		user, err := a.auth.SessionUser(r.Context(), cookie.Value)
+		if err != nil {
+			http.Error(w, "authentication required", http.StatusUnauthorized)
+			return
+		}
+		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), sessionContextKey{}, user)))
+	})
+}
+
+func (a *App) me(w http.ResponseWriter, r *http.Request) {
+	user := r.Context().Value(sessionContextKey{}).(auth.SessionUser)
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	_ = json.NewEncoder(w).Encode(map[string]string{"id": user.ID, "timezone": user.Timezone})
 }
 
 func (a *App) createChallenge(w http.ResponseWriter, r *http.Request) {
