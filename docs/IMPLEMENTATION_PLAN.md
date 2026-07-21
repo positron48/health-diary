@@ -1,6 +1,10 @@
 # Implementation plan
 
-Status: Phase 0 complete; Phase 1 in progress; Phase 2 and later are pending.
+Status: Phases 0–3 have implemented vertical slices; Phase 5 has implemented
+Telegram-code session basics; Phase 6 has a minimal responsive review UI;
+Phase 7 has conservative confirmed-event summary/export. The remaining detailed
+items in these phases and all production external gates remain open until their
+tests and operational verification are completed.
 
 Scope: first production-capable MVP described in `PRODUCT.md`.
 

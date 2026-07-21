@@ -2,7 +2,10 @@
 
 Личный дневник здоровья с вводом через Telegram, структурированием записей через LLM и отдельной web/PWA-панелью для календаря, эпизодов головной боли, лекарств, активности и аналитики.
 
-Проект находится в **Phase 0 — application scaffold**. Документы ниже остаются source of truth для реализации; Phase 1 (схема, шифрование и очереди) ещё не начата.
+Реализован работающий MVP-контур: PostgreSQL schema/migrations, encrypted Telegram
+ingest, Polza-compatible extraction, confirmation, web login/review, export and
+deterministic basic analytics. Документы ниже остаются source of truth; до
+production rollout ещё нужны infrastructure gates из `docs/DECISIONS.md`.
 
 ## Цель
 
@@ -42,10 +45,11 @@ make down
 
 - [x] Проект и Git-репозиторий инициализированы.
 - [x] Product/architecture/API/data/security/operations specification подготовлена.
-- [ ] Application scaffold.
-- [ ] Первая миграция.
-- [ ] Сквозной поток Telegram → LLM → подтверждение → календарь.
-- [ ] GitLab CI и Flux rollout.
+- [x] Application scaffold, Docker Compose и required Make targets.
+- [x] Forward PostgreSQL migrations, encryption, jobs and outbox.
+- [x] Сквозной поток Telegram → LLM → durable confirmation → web review/export.
+- [x] GitLab checks/container build/publish configuration.
+- [ ] Flux manifest, domain, registry access and encrypted-backup restore verification.
 
 ## Важное ограничение
 
