@@ -40,7 +40,7 @@ func DispatchOneOutbox(ctx context.Context, api *tgbotapi.BotAPI, db *pgxpool.Po
 	}
 	config := tgbotapi.NewMessage(message.ChatID, message.Text)
 	if message.ConfirmToken != "" && message.RejectToken != "" {
-		config.ReplyMarkup = tgbotapi.NewInlineKeyboardMarkup(tgbotapi.NewInlineKeyboardRow(tgbotapi.NewInlineKeyboardButtonData("Верно", "v1:"+message.ConfirmToken+":confirm"), tgbotapi.NewInlineKeyboardButtonData("Отклонить", "v1:"+message.RejectToken+":reject")))
+		config.ReplyMarkup = tgbotapi.NewInlineKeyboardMarkup(tgbotapi.NewInlineKeyboardRow(tgbotapi.NewInlineKeyboardButtonData("Подтвердить всё", "v1:"+message.ConfirmToken+":confirm"), tgbotapi.NewInlineKeyboardButtonData("Отклонить всё", "v1:"+message.RejectToken+":reject")))
 	}
 	if _, err = api.Send(config); err != nil {
 		return finishOutbox(ctx, db, id, true, "telegram_send_failed")

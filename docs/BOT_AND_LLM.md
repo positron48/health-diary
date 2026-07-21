@@ -40,7 +40,7 @@ stateDiagram-v2
     confirmed --> deleted
 ```
 
-Bot acknowledgement and final confirmation are separate messages so Telegram response latency is independent of LLM latency.
+Bot acknowledgement and final confirmation are separate messages so Telegram response latency is independent of LLM latency. The final Telegram message lists every extracted candidate and uses explicit batch-level actions: `Подтвердить всё` and `Отклонить всё`.
 If every extraction attempt fails, the bot sends a separate failure notice that
 the encrypted entry is retained; it never exposes provider errors or entry text.
 

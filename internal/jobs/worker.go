@@ -159,7 +159,7 @@ func (w *Worker) extract(ctx context.Context, entryID string, attempt int) error
 		if _, err = tx.Exec(ctx, `INSERT INTO telegram_callback_actions(token_hash,user_id,batch_id,batch_version,action,expires_at) VALUES($1,$2,$3,1,'confirm',now()+interval '7 days'),($4,$2,$3,1,'reject',now()+interval '7 days')`, confirmHash, userID, batchID, rejectHash); err != nil {
 			return err
 		}
-		payload := map[string]any{"chat_id": *telegramUserID, "text": fmt.Sprintf("Распознано событий: %d. Подтвердите только те факты, которые верны.", len(result.Events)), "confirm_token": confirmToken, "reject_token": rejectToken}
+		payload := map[string]any{"chat_id": *telegramUserID, "text": confirmationText(result.Events), "confirm_token": confirmToken, "reject_token": rejectToken}
 		if _, err = tx.Exec(ctx, `INSERT INTO outbox_messages(user_id,kind,payload) VALUES($1,'telegram_confirmation',$2)`, userID, payload); err != nil {
 			return err
 		}
