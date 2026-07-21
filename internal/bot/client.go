@@ -17,7 +17,11 @@ import (
 // proxy. It intentionally does not alter process-wide HTTP proxy settings.
 func NewAPI(token, socks5Address string) (*tgbotapi.BotAPI, error) {
 	if strings.TrimSpace(socks5Address) == "" {
-		return tgbotapi.NewBotAPI(token)
+		api, err := tgbotapi.NewBotAPI(token)
+		if err != nil {
+			return nil, telegramAPIError("initialize Telegram client")
+		}
+		return api, nil
 	}
 	raw := strings.TrimSpace(socks5Address)
 	if !strings.Contains(raw, "://") {
@@ -34,10 +38,20 @@ func NewAPI(token, socks5Address string) (*tgbotapi.BotAPI, error) {
 	}
 	dialer, err := proxy.SOCKS5("tcp", u.Host, auth, proxy.Direct)
 	if err != nil {
-		return nil, fmt.Errorf("create Telegram SOCKS5 proxy: %w", err)
+		return nil, fmt.Errorf("create Telegram SOCKS5 proxy")
 	}
 	transport := &http.Transport{DialContext: func(_ context.Context, network, address string) (net.Conn, error) {
 		return dialer.Dial(network, address)
 	}}
-	return tgbotapi.NewBotAPIWithClient(token, tgbotapi.APIEndpoint, &http.Client{Transport: transport, Timeout: 40 * time.Second})
+	api, err := tgbotapi.NewBotAPIWithClient(token, tgbotapi.APIEndpoint, &http.Client{Transport: transport, Timeout: 40 * time.Second})
+	if err != nil {
+		return nil, telegramAPIError("initialize Telegram client")
+	}
+	return api, nil
+}
+
+// telegramAPIError deliberately discards the original error: the Telegram
+// library includes the bot token in request URLs in some transport errors.
+func telegramAPIError(operation string) error {
+	return fmt.Errorf("%s failed", operation)
 }

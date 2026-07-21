@@ -2,7 +2,6 @@ package bot
 
 import (
 	"context"
-	"fmt"
 	"log/slog"
 	"time"
 
@@ -12,10 +11,10 @@ import (
 func RunLongPolling(ctx context.Context, token, socks5Address string, handler *Handler, log *slog.Logger) error {
 	api, err := NewAPI(token, socks5Address)
 	if err != nil {
-		return fmt.Errorf("create telegram client: %w", err)
+		return err
 	}
 	if _, err = api.Request(tgbotapi.DeleteWebhookConfig{DropPendingUpdates: false}); err != nil {
-		return fmt.Errorf("disable telegram webhook for long polling: %w", err)
+		return telegramAPIError("disable Telegram webhook for long polling")
 	}
 	updates := api.GetUpdatesChan(tgbotapi.NewUpdate(0))
 	defer api.StopReceivingUpdates()

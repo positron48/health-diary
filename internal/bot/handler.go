@@ -39,7 +39,10 @@ func (h *Handler) Handle(ctx context.Context, bot *tgbotapi.BotAPI, update tgbot
 	}
 	if _, ok := h.allowed[m.From.ID]; !ok {
 		_, err := bot.Send(tgbotapi.NewMessage(m.Chat.ID, "Этот бот пока недоступен для этого аккаунта."))
-		return err
+		if err != nil {
+			return telegramAPIError("send Telegram message")
+		}
+		return nil
 	}
 	text := strings.TrimSpace(m.Text)
 	if text == "" {
@@ -53,7 +56,10 @@ func (h *Handler) Handle(ctx context.Context, bot *tgbotapi.BotAPI, update tgbot
 		return fmt.Errorf("capture update %d: %w", update.UpdateID, err)
 	}
 	_, err = bot.Send(tgbotapi.NewMessage(m.Chat.ID, "Запись принята. Скоро пришлю распознанные события для подтверждения."))
-	return err
+	if err != nil {
+		return telegramAPIError("send Telegram message")
+	}
+	return nil
 }
 
 func (h *Handler) callback(ctx context.Context, api *tgbotapi.BotAPI, callback *tgbotapi.CallbackQuery) error {
@@ -66,7 +72,10 @@ func (h *Handler) callback(ctx context.Context, api *tgbotapi.BotAPI, callback *
 	parts := strings.Split(callback.Data, ":")
 	if len(parts) != 3 || parts[0] != "v1" || (parts[2] != "confirm" && parts[2] != "reject") {
 		_, err := api.Request(tgbotapi.NewCallback(callback.ID, "Действие недоступно."))
-		return err
+		if err != nil {
+			return telegramAPIError("answer Telegram callback")
+		}
+		return nil
 	}
 	err := journal.ApplyTelegramAction(ctx, h.db, int64(callback.From.ID), parts[1], parts[2])
 	message := "Готово: события подтверждены."
@@ -77,7 +86,10 @@ func (h *Handler) callback(ctx context.Context, api *tgbotapi.BotAPI, callback *
 		message = "Это действие уже выполнено или ссылка устарела."
 	}
 	_, requestErr := api.Request(tgbotapi.NewCallback(callback.ID, message))
-	return requestErr
+	if requestErr != nil {
+		return telegramAPIError("answer Telegram callback")
+	}
+	return nil
 }
 
 func (h *Handler) command(ctx context.Context, bot *tgbotapi.BotAPI, chatID, telegramUserID int64, username, text string) error {
@@ -106,5 +118,8 @@ func (h *Handler) command(ctx context.Context, bot *tgbotapi.BotAPI, chatID, tel
 		reply = "Команда пока недоступна. Используйте /help."
 	}
 	_, err := bot.Send(tgbotapi.NewMessage(chatID, reply))
-	return err
+	if err != nil {
+		return telegramAPIError("send Telegram message")
+	}
+	return nil
 }

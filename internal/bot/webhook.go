@@ -19,7 +19,7 @@ func ConfigureWebhook(token, url, secret, socks5Address string) (*tgbotapi.BotAP
 	}
 	params := tgbotapi.Params{"url": url, "secret_token": secret, "allowed_updates": `["message","callback_query"]`}
 	if _, err = api.MakeRequest("setWebhook", params); err != nil {
-		return nil, err
+		return nil, telegramAPIError("configure Telegram webhook")
 	}
 	return api, nil
 }
