@@ -21,5 +21,6 @@ func (Fake) Extract(_ context.Context, text string) (Result, error) {
 	if len(events) == 0 {
 		events = append(events, Event{ClientRef: "e1", Kind: "note", OccurredAt: now, TimePrecision: "inferred_from_message", Data: map[string]any{}})
 	}
-	return Result{Summary: "Черновик записи", Events: events}, nil
+	result := Result{Summary: "Черновик записи", Events: events}
+	return result, ValidateResult(result)
 }

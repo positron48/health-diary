@@ -63,6 +63,9 @@ func (w *Worker) extract(ctx context.Context, entryID string) error {
 	if err != nil {
 		return err
 	}
+	if err := llm.ValidateResult(result); err != nil {
+		return fmt.Errorf("validate extraction result: %w", err)
+	}
 	validatedResult, err := json.Marshal(result)
 	if err != nil {
 		return fmt.Errorf("marshal validated result: %w", err)

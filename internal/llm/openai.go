@@ -58,8 +58,8 @@ func (p *OpenAICompatible) Extract(ctx context.Context, text string) (Result, er
 	if err := json.Unmarshal([]byte(strings.TrimSpace(content)), &result); err != nil {
 		return Result{}, fmt.Errorf("invalid provider JSON: %w", err)
 	}
-	if len(result.Events) == 0 {
-		return Result{}, fmt.Errorf("provider returned no events")
+	if err := ValidateResult(result); err != nil {
+		return Result{}, fmt.Errorf("invalid provider result: %w", err)
 	}
 	return result, nil
 }
