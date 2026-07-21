@@ -42,8 +42,8 @@ make docker-build
 
 Services:
 
-- `postgres`: PostgreSQL 16, named volume, healthcheck, local port override.
-- `app`: application image, depends on healthy DB, long polling, bind port 8080.
+- `postgres`: PostgreSQL 16, named volume, healthcheck, published locally on `15432` by default.
+- `app`: application image, depends on healthy DB, long polling, published locally on `18080` by default (container port `8080`).
 
 Optional profiles:
 

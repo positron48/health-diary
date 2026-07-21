@@ -1,6 +1,6 @@
 # Implementation plan
 
-Status: Phase 0 in progress; Phase 1 and later are pending.
+Status: Phase 0 complete; Phase 1 in progress; Phase 2 and later are pending.
 
 Scope: first production-capable MVP described in `PRODUCT.md`.
 
@@ -54,7 +54,7 @@ Tests/verification:
 ```bash
 cp .env.example .env
 make up
-curl -fsS http://localhost:8080/healthz
+curl -fsS http://localhost:18080/healthz
 make check
 make down
 ```
