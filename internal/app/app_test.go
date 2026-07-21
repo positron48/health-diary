@@ -15,6 +15,9 @@ func TestHealthz(t *testing.T) {
 	if response.Code != http.StatusOK || response.Body.String() != "ok\n" {
 		t.Fatalf("unexpected response: status=%d body=%q", response.Code, response.Body.String())
 	}
+	if response.Header().Get("Content-Security-Policy") == "" || response.Header().Get("X-Frame-Options") != "DENY" {
+		t.Fatalf("security headers were not set: %#v", response.Header())
+	}
 }
 
 func TestReadyzWithoutDatabaseIsUnavailable(t *testing.T) {
