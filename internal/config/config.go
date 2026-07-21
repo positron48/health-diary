@@ -10,10 +10,13 @@ import (
 )
 
 type Config struct {
-	HTTPAddr    string
-	DatabaseURL string
-	LogLevel    slog.Level
-	Telegram    TelegramConfig
+	HTTPAddr                 string
+	DatabaseURL              string
+	LogLevel                 slog.Level
+	Telegram                 TelegramConfig
+	DataEncryptionKey        string
+	DataEncryptionKeyVersion int
+	JobMaxAttempts           int
 }
 
 type TelegramConfig struct {
@@ -24,10 +27,13 @@ type TelegramConfig struct {
 
 func Load() (Config, error) {
 	cfg := Config{
-		HTTPAddr:    value("HTTP_ADDR", ":8080"),
-		DatabaseURL: value("DATABASE_URL", ""),
-		LogLevel:    parseLogLevel(value("LOG_LEVEL", "info")),
-		Telegram:    TelegramConfig{Token: value("TELEGRAM_BOT_TOKEN", ""), Mode: value("TELEGRAM_MODE", "long_polling")},
+		HTTPAddr:                 value("HTTP_ADDR", ":8080"),
+		DatabaseURL:              value("DATABASE_URL", ""),
+		LogLevel:                 parseLogLevel(value("LOG_LEVEL", "info")),
+		Telegram:                 TelegramConfig{Token: value("TELEGRAM_BOT_TOKEN", ""), Mode: value("TELEGRAM_MODE", "long_polling")},
+		DataEncryptionKey:        value("DATA_ENCRYPTION_KEY", ""),
+		DataEncryptionKeyVersion: intValue("DATA_ENCRYPTION_KEY_VERSION", 1),
+		JobMaxAttempts:           intValue("JOB_MAX_ATTEMPTS", 5),
 	}
 	if cfg.HTTPAddr == "" {
 		return Config{}, fmt.Errorf("HTTP_ADDR must not be empty")
@@ -47,6 +53,18 @@ func Load() (Config, error) {
 	}
 	cfg.Telegram.AllowedUserIDs = allowed
 	return cfg, nil
+}
+
+func intValue(key string, fallback int) int {
+	raw := value(key, "")
+	if raw == "" {
+		return fallback
+	}
+	n, err := strconv.Atoi(raw)
+	if err != nil || n < 1 {
+		return fallback
+	}
+	return n
 }
 
 func parseIDs(raw string) (map[int64]struct{}, error) {

@@ -10,7 +10,11 @@ import (
 	"net/http"
 	"time"
 
+	"health-diary/internal/bot"
 	"health-diary/internal/config"
+	"health-diary/internal/crypto"
+	"health-diary/internal/database"
+	"health-diary/internal/ingest"
 
 	"github.com/jackc/pgx/v5"
 )
@@ -31,6 +35,26 @@ func New(cfg config.Config, logger *slog.Logger) *App {
 }
 
 func (a *App) Run(ctx context.Context, shutdownTimeout time.Duration) error {
+	if a.config.Telegram.Token != "" {
+		if a.config.DataEncryptionKey == "" || len(a.config.Telegram.AllowedUserIDs) == 0 {
+			return fmt.Errorf("telegram requires DATA_ENCRYPTION_KEY and TELEGRAM_ALLOWED_USER_IDS")
+		}
+		cipher, err := crypto.New(a.config.DataEncryptionKey, a.config.DataEncryptionKeyVersion)
+		if err != nil {
+			return err
+		}
+		pool, err := database.Open(ctx, a.config.DatabaseURL)
+		if err != nil {
+			return err
+		}
+		defer pool.Close()
+		handler := bot.NewHandler(ingest.New(pool, cipher, a.config.JobMaxAttempts), a.config.Telegram.AllowedUserIDs, a.logger)
+		go func() {
+			if err := bot.RunLongPolling(ctx, a.config.Telegram.Token, handler, a.logger); err != nil {
+				a.logger.Error("telegram polling stopped", "error", err)
+			}
+		}()
+	}
 	server := &http.Server{Addr: a.config.HTTPAddr, Handler: a.Handler(), ReadHeaderTimeout: 5 * time.Second}
 	errCh := make(chan error, 1)
 	go func() { errCh <- server.ListenAndServe() }()
