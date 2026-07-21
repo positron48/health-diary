@@ -15,10 +15,10 @@ RUN CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' -o /out/health-diary ./cmd
 RUN CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' -o /out/health-diary-migrate ./cmd/migrate
 
 FROM alpine:3.22
-RUN addgroup -S app && adduser -S -G app app
+RUN addgroup -S -g 10001 app && adduser -S -D -H -u 10001 -G app app
 COPY --from=build /out/health-diary /app/health-diary
 COPY --from=build /out/health-diary-migrate /app/health-diary-migrate
 COPY migrations/ /app/migrations/
-USER app
+USER 10001:10001
 EXPOSE 8080 9090
 CMD ["/app/health-diary"]
