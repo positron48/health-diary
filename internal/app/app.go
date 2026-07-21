@@ -15,6 +15,8 @@ import (
 	"health-diary/internal/crypto"
 	"health-diary/internal/database"
 	"health-diary/internal/ingest"
+	"health-diary/internal/jobs"
+	"health-diary/internal/llm"
 
 	"github.com/jackc/pgx/v5"
 )
@@ -49,6 +51,21 @@ func (a *App) Run(ctx context.Context, shutdownTimeout time.Duration) error {
 		}
 		defer pool.Close()
 		handler := bot.NewHandler(ingest.New(pool, cipher, a.config.JobMaxAttempts), a.config.Telegram.AllowedUserIDs, a.logger)
+		worker := jobs.NewWorker(pool, cipher, llm.Fake{}, "app-1")
+		go func() {
+			ticker := time.NewTicker(time.Second)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case <-ticker.C:
+					if err := worker.RunOnce(ctx); err != nil {
+						a.logger.Error("job processing failed", "error", err)
+					}
+				}
+			}
+		}()
 		go func() {
 			if err := bot.RunLongPolling(ctx, a.config.Telegram.Token, handler, a.logger); err != nil {
 				a.logger.Error("telegram polling stopped", "error", err)
