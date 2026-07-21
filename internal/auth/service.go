@@ -19,7 +19,10 @@ type Challenge struct {
 	ExpiresAt time.Time
 }
 
-type SessionUser struct{ ID, Timezone string }
+type SessionUser struct {
+	ID, Timezone string
+	CreatedAt    time.Time
+}
 
 func NewService(db *pgxpool.Pool, codeTTL, sessionTTL time.Duration, maxAttempts int) *Service {
 	return &Service{db, codeTTL, sessionTTL, maxAttempts}
@@ -116,6 +119,11 @@ func (s *Service) Verify(ctx context.Context, challengeID, code string) (string,
 
 func (s *Service) SessionUser(ctx context.Context, token string) (SessionUser, error) {
 	var user SessionUser
-	err := s.db.QueryRow(ctx, `SELECT u.id::text,u.timezone FROM web_sessions s JOIN users u ON u.id=s.user_id WHERE s.token_hash=$1 AND s.expires_at>now() AND s.revoked_at IS NULL AND u.status='active'`, Hash(token)).Scan(&user.ID, &user.Timezone)
+	err := s.db.QueryRow(ctx, `SELECT u.id::text,u.timezone,s.created_at FROM web_sessions s JOIN users u ON u.id=s.user_id WHERE s.token_hash=$1 AND s.expires_at>now() AND s.revoked_at IS NULL AND u.status='active'`, Hash(token)).Scan(&user.ID, &user.Timezone, &user.CreatedAt)
 	return user, err
+}
+
+func (s *Service) RevokeSession(ctx context.Context, token string) error {
+	_, err := s.db.Exec(ctx, `UPDATE web_sessions SET revoked_at=now() WHERE token_hash=$1 AND revoked_at IS NULL`, Hash(token))
+	return err
 }

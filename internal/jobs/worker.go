@@ -30,6 +30,9 @@ func (w *Worker) RunOnce(ctx context.Context) error {
 	if err != nil || job == nil {
 		return err
 	}
+	if job.Kind == "delete_user" {
+		return w.deleteUser(ctx, job)
+	}
 	if job.Kind != "extract_entry" {
 		return w.queue.Finish(ctx, job.ID, false, "unsupported_job")
 	}
@@ -41,6 +44,39 @@ func (w *Worker) RunOnce(ctx context.Context) error {
 	}
 	if err := w.extract(ctx, payload.EntryID, job.Attempts); err != nil {
 		_ = w.queue.Finish(ctx, job.ID, true, "extraction_failed")
+		return err
+	}
+	return w.queue.Finish(ctx, job.ID, false, "")
+}
+
+func (w *Worker) deleteUser(ctx context.Context, job *Job) error {
+	var payload struct {
+		UserID  string `json:"user_id"`
+		AuditID string `json:"audit_id"`
+	}
+	if err := json.Unmarshal(job.Payload, &payload); err != nil {
+		return w.queue.Finish(ctx, job.ID, false, "invalid_payload")
+	}
+	tx, err := w.db.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	// Explicit order keeps audit/reference tables valid while removing every
+	// application-held health record for the account.
+	queries := []string{
+		`DELETE FROM telegram_callback_actions WHERE user_id=$1`, `DELETE FROM outbox_messages WHERE user_id=$1`, `DELETE FROM auth_challenges WHERE user_id=$1`, `DELETE FROM web_sessions WHERE user_id=$1`,
+		`DELETE FROM event_revisions WHERE event_id IN (SELECT id FROM health_events WHERE user_id=$1)`, `DELETE FROM health_events WHERE user_id=$1`, `DELETE FROM event_batches WHERE user_id=$1`, `DELETE FROM extraction_runs WHERE entry_id IN (SELECT id FROM journal_entries WHERE user_id=$1)`, `DELETE FROM jobs WHERE kind='extract_entry' AND payload->>'entry_id' IN (SELECT id::text FROM journal_entries WHERE user_id=$1)`, `DELETE FROM journal_entries WHERE user_id=$1`, `DELETE FROM users WHERE id=$1 AND status='deletion_pending'`,
+	}
+	for _, query := range queries {
+		if _, err = tx.Exec(ctx, query, payload.UserID); err != nil {
+			return err
+		}
+	}
+	if _, err = tx.Exec(ctx, `UPDATE deletion_audits SET status='completed',completed_at=now() WHERE id=$1 AND status='queued'`, payload.AuditID); err != nil {
+		return err
+	}
+	if err = tx.Commit(ctx); err != nil {
 		return err
 	}
 	return w.queue.Finish(ctx, job.ID, false, "")

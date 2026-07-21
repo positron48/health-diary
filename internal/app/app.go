@@ -137,6 +137,8 @@ func (a *App) Handler() http.Handler {
 		mux.Handle("POST /telegram/webhook", a.telegramWebhook)
 	}
 	mux.HandleFunc("POST /auth/challenges/{id}/verify", a.verifyChallenge)
+	mux.Handle("GET /auth/session", a.requireSession(http.HandlerFunc(a.me)))
+	mux.Handle("DELETE /auth/session", a.requireSession(http.HandlerFunc(a.logout)))
 	mux.Handle("GET /api/me", a.requireSession(http.HandlerFunc(a.me)))
 	mux.Handle("GET /calendar", a.requireSession(http.HandlerFunc(a.calendar)))
 	mux.Handle("GET /events", a.requireSession(http.HandlerFunc(a.events)))
@@ -146,6 +148,7 @@ func (a *App) Handler() http.Handler {
 	mux.Handle("POST /events/{id}/restore", a.requireSession(http.HandlerFunc(a.restoreEvent)))
 	mux.Handle("POST /batches/{id}/confirm", a.requireSession(http.HandlerFunc(a.confirmBatch)))
 	mux.Handle("POST /batches/{id}/reject", a.requireSession(http.HandlerFunc(a.rejectBatch)))
+	mux.Handle("POST /me/deletion-request", a.requireSession(http.HandlerFunc(a.deletionRequest)))
 	mux.HandleFunc("GET /api/health-data", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
@@ -372,6 +375,63 @@ func (a *App) me(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	_ = json.NewEncoder(w).Encode(map[string]string{"id": user.ID, "timezone": user.Timezone})
+}
+
+func (a *App) logout(w http.ResponseWriter, r *http.Request) {
+	cookie, err := r.Cookie(a.config.SessionCookieName)
+	if err == nil {
+		_ = a.auth.RevokeSession(r.Context(), cookie.Value)
+	}
+	http.SetCookie(w, &http.Cookie{Name: a.config.SessionCookieName, Value: "", Path: "/", HttpOnly: true, Secure: true, SameSite: http.SameSiteLaxMode, MaxAge: -1})
+	w.Header().Set("Cache-Control", "no-store")
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (a *App) deletionRequest(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		Confirm string `json:"confirm"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1024)).Decode(&input); err != nil || input.Confirm != "DELETE_MY_DATA" {
+		http.Error(w, "explicit confirmation is required", http.StatusBadRequest)
+		return
+	}
+	user := r.Context().Value(sessionContextKey{}).(auth.SessionUser)
+	if time.Since(user.CreatedAt) > 10*time.Minute {
+		http.Error(w, "recent authentication is required", http.StatusUnauthorized)
+		return
+	}
+	tx, err := a.db.Begin(r.Context())
+	if err != nil {
+		http.Error(w, "unable to request deletion", 500)
+		return
+	}
+	defer tx.Rollback(r.Context())
+	var auditID string
+	if err = tx.QueryRow(r.Context(), `INSERT INTO deletion_audits(status) VALUES('queued') RETURNING id::text`).Scan(&auditID); err != nil {
+		http.Error(w, "unable to request deletion", 500)
+		return
+	}
+	tag, err := tx.Exec(r.Context(), `UPDATE users SET status='deletion_pending',updated_at=now() WHERE id=$1 AND status='active'`, user.ID)
+	if err != nil || tag.RowsAffected() != 1 {
+		http.Error(w, "deletion is already pending", 409)
+		return
+	}
+	if _, err = tx.Exec(r.Context(), `UPDATE web_sessions SET revoked_at=now() WHERE user_id=$1 AND revoked_at IS NULL`, user.ID); err != nil {
+		http.Error(w, "unable to request deletion", 500)
+		return
+	}
+	if _, err = tx.Exec(r.Context(), `INSERT INTO jobs(kind,payload,max_attempts) VALUES('delete_user',jsonb_build_object('user_id',$1::text,'audit_id',$2::text),3)`, user.ID, auditID); err != nil {
+		http.Error(w, "unable to request deletion", 500)
+		return
+	}
+	if err = tx.Commit(r.Context()); err != nil {
+		http.Error(w, "unable to request deletion", 500)
+		return
+	}
+	http.SetCookie(w, &http.Cookie{Name: a.config.SessionCookieName, Value: "", Path: "/", HttpOnly: true, Secure: true, SameSite: http.SameSiteLaxMode, MaxAge: -1})
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	_ = json.NewEncoder(w).Encode(map[string]string{"deletion_request_id": auditID, "status": "queued"})
 }
 
 func (a *App) createChallenge(w http.ResponseWriter, r *http.Request) {
