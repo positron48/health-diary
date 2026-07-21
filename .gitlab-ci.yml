@@ -1,0 +1,18 @@
+stages: [check, build]
+
+check:
+  stage: check
+  image: golang:1.26
+  before_script:
+    - apt-get update && apt-get install -y curl
+    - curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
+    - apt-get install -y nodejs
+  script:
+    - make check
+
+docker-build:
+  stage: build
+  image: docker:29
+  services: [docker:29-dind]
+  script:
+    - docker build -t health-diary:$CI_COMMIT_SHA .
