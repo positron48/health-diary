@@ -134,7 +134,10 @@ Access logs must exclude query/body and redact auth cookies.
 - Raw entries and normalized health data have no automatic retention deletion at MVP launch. Explicit user deletion remains available and is the only application-triggered deletion of health content.
 - Expired auth challenges/sessions/jobs/outbox records are cleaned automatically.
 - Exports are encrypted or access-controlled, have short TTL and are deleted after expiry.
-- Hard deletion requires recent re-authentication and an explicit confirmation step.
+- Hard deletion requires a session created within the previous 10 minutes and
+  explicit `DELETE_MY_DATA` confirmation. It revokes sessions, runs as a
+  durable deletion job and retains only a non-identifying completion audit.
+  Encrypted backups expire under their separate retention policy.
 - Product must state backup retention honestly: deleted data may persist in encrypted backups until scheduled expiry.
 
 ## 10. Telegram deletion limitation

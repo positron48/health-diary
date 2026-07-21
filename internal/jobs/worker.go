@@ -79,7 +79,9 @@ func (w *Worker) deleteUser(ctx context.Context, job *Job) error {
 	if err = tx.Commit(ctx); err != nil {
 		return err
 	}
-	return w.queue.Finish(ctx, job.ID, false, "")
+	// The completed job itself must not retain the deleted account identifier.
+	_, err = w.db.Exec(ctx, `UPDATE jobs SET status='succeeded',payload='{}'::jsonb,locked_at=NULL,locked_by=NULL,last_error_code=NULL,updated_at=now() WHERE id=$1 AND status='running'`, job.ID)
+	return err
 }
 func (w *Worker) extract(ctx context.Context, entryID string, attempt int) error {
 	tx, err := w.db.Begin(ctx)
