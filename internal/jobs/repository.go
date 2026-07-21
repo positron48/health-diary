@@ -67,6 +67,6 @@ func (r *Repository) Finish(ctx context.Context, id string, retryable bool, erro
 			availableAt = time.Now().Add(time.Minute)
 		}
 	}
-	_, err := r.db.Exec(ctx, `UPDATE jobs SET status=$2,available_at=$3,last_error_code=NULLIF($4,''),locked_at=NULL,locked_by=NULL,updated_at=now() WHERE id=$1 AND status='running'`, id, status, availableAt, errorCode)
+	_, err := r.db.Exec(ctx, `UPDATE jobs SET status=CASE WHEN $2='retryable_failed' AND attempts >= max_attempts THEN 'terminal_failed' ELSE $2 END,available_at=$3,last_error_code=NULLIF($4,''),locked_at=NULL,locked_by=NULL,updated_at=now() WHERE id=$1 AND status='running'`, id, status, availableAt, errorCode)
 	return err
 }

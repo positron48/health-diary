@@ -39,13 +39,13 @@ func (w *Worker) RunOnce(ctx context.Context) error {
 	if err := json.Unmarshal(job.Payload, &payload); err != nil {
 		return w.queue.Finish(ctx, job.ID, false, "invalid_payload")
 	}
-	if err := w.extract(ctx, payload.EntryID); err != nil {
+	if err := w.extract(ctx, payload.EntryID, job.Attempts); err != nil {
 		_ = w.queue.Finish(ctx, job.ID, true, "extraction_failed")
 		return err
 	}
 	return w.queue.Finish(ctx, job.ID, false, "")
 }
-func (w *Worker) extract(ctx context.Context, entryID string) error {
+func (w *Worker) extract(ctx context.Context, entryID string, attempt int) error {
 	tx, err := w.db.Begin(ctx)
 	if err != nil {
 		return err
@@ -73,7 +73,7 @@ func (w *Worker) extract(ctx context.Context, entryID string) error {
 		return fmt.Errorf("marshal validated result: %w", err)
 	}
 	var runID, batchID string
-	if err := tx.QueryRow(ctx, `INSERT INTO extraction_runs(entry_id,attempt,provider,model,prompt_version,schema_version,context_fingerprint,status,validated_result,finished_at) VALUES($1,1,$2,$3,'health-entry-v1','health-entry-v1','', 'succeeded',$4,now()) RETURNING id::text`, entryID, w.provider, w.model, validatedResult).Scan(&runID); err != nil {
+	if err := tx.QueryRow(ctx, `INSERT INTO extraction_runs(entry_id,attempt,provider,model,prompt_version,schema_version,context_fingerprint,status,validated_result,finished_at) VALUES($1,$2,$3,$4,'health-entry-v1','health-entry-v1','', 'succeeded',$5,now()) RETURNING id::text`, entryID, attempt, w.provider, w.model, validatedResult).Scan(&runID); err != nil {
 		return err
 	}
 	if err := tx.QueryRow(ctx, `INSERT INTO event_batches(user_id,entry_id,extraction_run_id) VALUES($1,$2,$3) RETURNING id::text`, userID, entryID, runID).Scan(&batchID); err != nil {
