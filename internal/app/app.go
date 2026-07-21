@@ -36,10 +36,11 @@ import (
 var webAssets embed.FS
 
 type App struct {
-	config config.Config
-	logger *slog.Logger
-	db     *pgxpool.Pool
-	auth   *auth.Service
+	config          config.Config
+	logger          *slog.Logger
+	db              *pgxpool.Pool
+	auth            *auth.Service
+	telegramWebhook http.Handler
 }
 
 func New(cfg config.Config, logger *slog.Logger) *App {
@@ -90,11 +91,20 @@ func (a *App) Run(ctx context.Context, shutdownTimeout time.Duration) error {
 				}
 			}
 		}()
-		go func() {
-			if err := bot.RunLongPolling(ctx, a.config.Telegram.Token, handler, a.logger); err != nil {
-				a.logger.Error("telegram polling stopped", "error", err)
+		if a.config.Telegram.Mode == "webhook" {
+			api, err := bot.ConfigureWebhook(a.config.Telegram.Token, a.config.Telegram.WebhookURL, a.config.Telegram.WebhookSecret)
+			if err != nil {
+				return fmt.Errorf("configure telegram webhook: %w", err)
 			}
-		}()
+			a.telegramWebhook = bot.WebhookHandler(api, handler, a.config.Telegram.WebhookSecret)
+			go bot.RunOutbox(ctx, api, pool)
+		} else {
+			go func() {
+				if err := bot.RunLongPolling(ctx, a.config.Telegram.Token, handler, a.logger); err != nil {
+					a.logger.Error("telegram polling stopped", "error", err)
+				}
+			}()
+		}
 	}
 	server := &http.Server{Addr: a.config.HTTPAddr, Handler: a.Handler(), ReadHeaderTimeout: 5 * time.Second}
 	errCh := make(chan error, 1)
@@ -123,6 +133,9 @@ func (a *App) Handler() http.Handler {
 		writeText(w, http.StatusOK, "health_diary_up 1\n")
 	})
 	mux.HandleFunc("POST /auth/challenges", a.createChallenge)
+	if a.telegramWebhook != nil {
+		mux.Handle("POST /telegram/webhook", a.telegramWebhook)
+	}
 	mux.HandleFunc("POST /auth/challenges/{id}/verify", a.verifyChallenge)
 	mux.Handle("GET /api/me", a.requireSession(http.HandlerFunc(a.me)))
 	mux.Handle("GET /calendar", a.requireSession(http.HandlerFunc(a.calendar)))

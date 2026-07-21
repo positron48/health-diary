@@ -31,6 +31,8 @@ type TelegramConfig struct {
 	Token          string
 	Username       string
 	Mode           string
+	WebhookURL     string
+	WebhookSecret  string
 	AllowedUserIDs map[int64]struct{}
 }
 
@@ -39,7 +41,7 @@ func Load() (Config, error) {
 		HTTPAddr:                 value("HTTP_ADDR", ":8080"),
 		DatabaseURL:              value("DATABASE_URL", ""),
 		LogLevel:                 parseLogLevel(value("LOG_LEVEL", "info")),
-		Telegram:                 TelegramConfig{Token: value("TELEGRAM_BOT_TOKEN", ""), Username: strings.TrimPrefix(value("TELEGRAM_BOT_USERNAME", ""), "@"), Mode: value("TELEGRAM_MODE", "long_polling")},
+		Telegram:                 TelegramConfig{Token: value("TELEGRAM_BOT_TOKEN", ""), Username: strings.TrimPrefix(value("TELEGRAM_BOT_USERNAME", ""), "@"), Mode: value("TELEGRAM_MODE", "long_polling"), WebhookURL: value("TELEGRAM_WEBHOOK_URL", ""), WebhookSecret: value("TELEGRAM_WEBHOOK_SECRET", "")},
 		DataEncryptionKey:        value("DATA_ENCRYPTION_KEY", ""),
 		DataEncryptionKeyVersion: intValue("DATA_ENCRYPTION_KEY_VERSION", 1),
 		JobMaxAttempts:           intValue("JOB_MAX_ATTEMPTS", 5),
@@ -62,6 +64,15 @@ func Load() (Config, error) {
 	}
 	if cfg.Telegram.Mode != "long_polling" && cfg.Telegram.Mode != "webhook" {
 		return Config{}, fmt.Errorf("TELEGRAM_MODE must be long_polling or webhook")
+	}
+	if cfg.Telegram.Mode == "webhook" {
+		if cfg.Telegram.WebhookURL == "" || cfg.Telegram.WebhookSecret == "" {
+			return Config{}, fmt.Errorf("webhook mode requires TELEGRAM_WEBHOOK_URL and TELEGRAM_WEBHOOK_SECRET")
+		}
+		u, err := url.Parse(cfg.Telegram.WebhookURL)
+		if err != nil || u.Scheme != "https" || u.Host == "" {
+			return Config{}, fmt.Errorf("TELEGRAM_WEBHOOK_URL must be an HTTPS URL")
+		}
 	}
 	allowed, err := parseIDs(value("TELEGRAM_ALLOWED_USER_IDS", ""))
 	if err != nil {
