@@ -51,7 +51,11 @@ func (a *App) Run(ctx context.Context, shutdownTimeout time.Duration) error {
 		}
 		defer pool.Close()
 		handler := bot.NewHandler(ingest.New(pool, cipher, a.config.JobMaxAttempts), a.config.Telegram.AllowedUserIDs, a.logger)
-		worker := jobs.NewWorker(pool, cipher, llm.Fake{}, "app-1")
+		var extractor llm.Extractor = llm.Fake{}
+		if a.config.LLMAPIKey != "" {
+			extractor = llm.NewOpenAICompatible(a.config.LLMBaseURL, a.config.LLMModel, a.config.LLMAPIKey, &http.Client{Timeout: 30 * time.Second})
+		}
+		worker := jobs.NewWorker(pool, cipher, extractor, "app-1")
 		go func() {
 			ticker := time.NewTicker(time.Second)
 			defer ticker.Stop()

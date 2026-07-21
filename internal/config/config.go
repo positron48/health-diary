@@ -17,6 +17,9 @@ type Config struct {
 	DataEncryptionKey        string
 	DataEncryptionKeyVersion int
 	JobMaxAttempts           int
+	LLMBaseURL               string
+	LLMAPIKey                string
+	LLMModel                 string
 }
 
 type TelegramConfig struct {
@@ -34,6 +37,9 @@ func Load() (Config, error) {
 		DataEncryptionKey:        value("DATA_ENCRYPTION_KEY", ""),
 		DataEncryptionKeyVersion: intValue("DATA_ENCRYPTION_KEY_VERSION", 1),
 		JobMaxAttempts:           intValue("JOB_MAX_ATTEMPTS", 5),
+		LLMBaseURL:               value("LLM_BASE_URL", "https://api.polza.ai/api/v1"),
+		LLMAPIKey:                value("LLM_API_KEY", ""),
+		LLMModel:                 value("LLM_MODEL", "openai/gpt-5-mini"),
 	}
 	if cfg.HTTPAddr == "" {
 		return Config{}, fmt.Errorf("HTTP_ADDR must not be empty")
