@@ -16,6 +16,7 @@ CI builds images; Flux deploys them. CI must not hold kubeconfig or run direct `
 
 ```bash
 cp .env.example .env
+make generate-encryption-key # set output as DATA_ENCRYPTION_KEY in .env
 make up          # app + postgres, build as needed
 make migrate     # forward migrations
 make logs        # follow app/postgres logs

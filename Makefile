@@ -1,4 +1,4 @@
-.PHONY: up down logs migrate test check reset-db web-build
+.PHONY: up down logs migrate test check reset-db web-build generate-encryption-key
 
 up:
 	docker compose up --build -d
@@ -24,3 +24,6 @@ check: test web-build
 reset-db:
 	@echo "Removing explicit Compose volume health-diary_health_diary_postgres"
 	docker compose down -v
+
+generate-encryption-key:
+	@openssl rand -base64 32
