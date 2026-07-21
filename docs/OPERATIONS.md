@@ -198,6 +198,11 @@ Non-secret ConfigMap:
 - retention flags;
 - metrics/job configuration.
 
+For production, set `TELEGRAM_MODE=webhook`, use an HTTPS
+`TELEGRAM_WEBHOOK_URL` ending in `/telegram/webhook`, and set a random
+`TELEGRAM_WEBHOOK_SECRET`. The application registers the webhook at startup
+and rejects requests without Telegram's matching secret header.
+
 ## 11. Backup and restore
 
 Before production:

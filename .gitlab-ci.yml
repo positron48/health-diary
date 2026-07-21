@@ -1,4 +1,4 @@
-stages: [check, build]
+stages: [check, build, publish]
 
 check:
   stage: check
@@ -16,3 +16,16 @@ docker-build:
   services: [docker:29-dind]
   script:
     - docker build -t health-diary:$CI_COMMIT_SHA .
+
+publish-image:
+  stage: publish
+  image: docker:29
+  services: [docker:29-dind]
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "master"'
+  script:
+    - echo "$CI_REGISTRY_PASSWORD" | docker login -u "$CI_REGISTRY_USER" --password-stdin "$CI_REGISTRY"
+    - docker build -t "$CI_REGISTRY_IMAGE:$CI_COMMIT_SHA" .
+    - docker push "$CI_REGISTRY_IMAGE:$CI_COMMIT_SHA"
+    - docker tag "$CI_REGISTRY_IMAGE:$CI_COMMIT_SHA" "$CI_REGISTRY_IMAGE:latest"
+    - docker push "$CI_REGISTRY_IMAGE:latest"
