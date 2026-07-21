@@ -1,0 +1,11 @@
+.git
+.env
+.env.*
+!.env.example
+web/node_modules
+web/dist
+internal/app/web/dist/assets
+coverage
+coverage.out
+tmp
+*.log
