@@ -20,6 +20,7 @@ import (
 	"health-diary/internal/database"
 	"health-diary/internal/ingest"
 	"health-diary/internal/jobs"
+	"health-diary/internal/journal"
 	"health-diary/internal/llm"
 
 	"github.com/jackc/pgx/v5"
@@ -124,6 +125,8 @@ func (a *App) Handler() http.Handler {
 	mux.Handle("GET /events", a.requireSession(http.HandlerFunc(a.events)))
 	mux.Handle("DELETE /events/{id}", a.requireSession(http.HandlerFunc(a.deleteEvent)))
 	mux.Handle("POST /events/{id}/restore", a.requireSession(http.HandlerFunc(a.restoreEvent)))
+	mux.Handle("POST /batches/{id}/confirm", a.requireSession(http.HandlerFunc(a.confirmBatch)))
+	mux.Handle("POST /batches/{id}/reject", a.requireSession(http.HandlerFunc(a.rejectBatch)))
 	mux.HandleFunc("GET /api/health-data", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
@@ -135,6 +138,31 @@ func (a *App) Handler() http.Handler {
 	}
 	mux.Handle("GET /", http.FileServer(http.FS(web)))
 	return mux
+}
+
+func (a *App) confirmBatch(w http.ResponseWriter, r *http.Request) { a.transitionBatch(w, r, true) }
+func (a *App) rejectBatch(w http.ResponseWriter, r *http.Request)  { a.transitionBatch(w, r, false) }
+func (a *App) transitionBatch(w http.ResponseWriter, r *http.Request, confirmed bool) {
+	var input struct {
+		Version int `json:"version"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1024)).Decode(&input); err != nil || input.Version < 1 {
+		http.Error(w, "version is required", http.StatusBadRequest)
+		return
+	}
+	user := r.Context().Value(sessionContextKey{}).(auth.SessionUser)
+	batches := journal.NewBatches(a.db)
+	var err error
+	if confirmed {
+		err = batches.Confirm(r.Context(), user.ID, r.PathValue("id"), input.Version)
+	} else {
+		err = batches.Reject(r.Context(), user.ID, r.PathValue("id"), input.Version)
+	}
+	if err != nil {
+		http.Error(w, "batch not found or stale", http.StatusConflict)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (a *App) events(w http.ResponseWriter, r *http.Request) {
