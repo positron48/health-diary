@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"time"
 
+	"health-diary/internal/analytics"
 	"health-diary/internal/auth"
 	"health-diary/internal/bot"
 	"health-diary/internal/config"
@@ -118,6 +119,7 @@ func (a *App) Handler() http.Handler {
 	mux.HandleFunc("POST /auth/challenges", a.createChallenge)
 	mux.HandleFunc("POST /auth/challenges/{id}/verify", a.verifyChallenge)
 	mux.Handle("GET /api/me", a.requireSession(http.HandlerFunc(a.me)))
+	mux.Handle("GET /calendar", a.requireSession(http.HandlerFunc(a.calendar)))
 	mux.HandleFunc("GET /api/health-data", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
@@ -129,6 +131,23 @@ func (a *App) Handler() http.Handler {
 	}
 	mux.Handle("GET /", http.FileServer(http.FS(web)))
 	return mux
+}
+
+func (a *App) calendar(w http.ResponseWriter, r *http.Request) {
+	month, err := time.Parse("2006-01", r.URL.Query().Get("month"))
+	if err != nil {
+		http.Error(w, "month must be YYYY-MM", http.StatusBadRequest)
+		return
+	}
+	user := r.Context().Value(sessionContextKey{}).(auth.SessionUser)
+	events, err := analytics.New(a.db).Events(r.Context(), user.ID, month.UTC(), month.AddDate(0, 1, 0).UTC())
+	if err != nil {
+		http.Error(w, "unable to read calendar", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	_ = json.NewEncoder(w).Encode(map[string]any{"month": month.Format("2006-01"), "timezone": user.Timezone, "events": events})
 }
 
 type sessionContextKey struct{}
