@@ -61,15 +61,23 @@ func (w *Worker) extract(ctx context.Context, entryID string) error {
 	if err != nil {
 		return err
 	}
+	validatedResult, err := json.Marshal(result)
+	if err != nil {
+		return fmt.Errorf("marshal validated result: %w", err)
+	}
 	var runID, batchID string
-	if err := tx.QueryRow(ctx, `INSERT INTO extraction_runs(entry_id,attempt,provider,model,prompt_version,schema_version,context_fingerprint,status,validated_result,finished_at) VALUES($1,1,'fake','fake','health-entry-v1','health-entry-v1','', 'succeeded',$2,now()) RETURNING id::text`, entryID, result).Scan(&runID); err != nil {
+	if err := tx.QueryRow(ctx, `INSERT INTO extraction_runs(entry_id,attempt,provider,model,prompt_version,schema_version,context_fingerprint,status,validated_result,finished_at) VALUES($1,1,'fake','fake','health-entry-v1','health-entry-v1','', 'succeeded',$2,now()) RETURNING id::text`, entryID, validatedResult).Scan(&runID); err != nil {
 		return err
 	}
 	if err := tx.QueryRow(ctx, `INSERT INTO event_batches(user_id,entry_id,extraction_run_id) VALUES($1,$2,$3) RETURNING id::text`, userID, entryID, runID).Scan(&batchID); err != nil {
 		return err
 	}
 	for _, event := range result.Events {
-		if _, err := tx.Exec(ctx, `INSERT INTO health_events(user_id,batch_id,entry_id,kind,occurred_at,time_precision,client_ref,attributes) VALUES($1,$2,$3,$4,$5,$6,$7,$8)`, userID, batchID, entryID, event.Kind, event.OccurredAt, event.TimePrecision, event.ClientRef, event.Data); err != nil {
+		attributes, err := json.Marshal(event.Data)
+		if err != nil {
+			return fmt.Errorf("marshal event attributes: %w", err)
+		}
+		if _, err := tx.Exec(ctx, `INSERT INTO health_events(user_id,batch_id,entry_id,kind,occurred_at,time_precision,client_ref,attributes) VALUES($1,$2,$3,$4,$5,$6,$7,$8)`, userID, batchID, entryID, event.Kind, event.OccurredAt, event.TimePrecision, event.ClientRef, attributes); err != nil {
 			return fmt.Errorf("insert event: %w", err)
 		}
 	}
