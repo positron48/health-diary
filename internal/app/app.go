@@ -9,6 +9,7 @@ import (
 	"io/fs"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"time"
 
 	"health-diary/internal/analytics"
@@ -120,6 +121,9 @@ func (a *App) Handler() http.Handler {
 	mux.HandleFunc("POST /auth/challenges/{id}/verify", a.verifyChallenge)
 	mux.Handle("GET /api/me", a.requireSession(http.HandlerFunc(a.me)))
 	mux.Handle("GET /calendar", a.requireSession(http.HandlerFunc(a.calendar)))
+	mux.Handle("GET /events", a.requireSession(http.HandlerFunc(a.events)))
+	mux.Handle("DELETE /events/{id}", a.requireSession(http.HandlerFunc(a.deleteEvent)))
+	mux.Handle("POST /events/{id}/restore", a.requireSession(http.HandlerFunc(a.restoreEvent)))
 	mux.HandleFunc("GET /api/health-data", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
@@ -131,6 +135,56 @@ func (a *App) Handler() http.Handler {
 	}
 	mux.Handle("GET /", http.FileServer(http.FS(web)))
 	return mux
+}
+
+func (a *App) events(w http.ResponseWriter, r *http.Request) {
+	user := r.Context().Value(sessionContextKey{}).(auth.SessionUser)
+	rows, err := a.db.Query(r.Context(), `SELECT id::text,kind,occurred_at,attributes,revision,status FROM health_events WHERE user_id=$1 AND deleted_at IS NULL ORDER BY occurred_at DESC LIMIT 200`, user.ID)
+	if err != nil {
+		http.Error(w, "unable to read events", http.StatusInternalServerError)
+		return
+	}
+	defer rows.Close()
+	items := []map[string]any{}
+	for rows.Next() {
+		var id, kind, status string
+		var occurred time.Time
+		var attrs json.RawMessage
+		var revision int
+		if err := rows.Scan(&id, &kind, &occurred, &attrs, &revision, &status); err != nil {
+			http.Error(w, "unable to read events", 500)
+			return
+		}
+		items = append(items, map[string]any{"id": id, "kind": kind, "occurred_at": occurred, "attributes": attrs, "revision": revision, "status": status})
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	_ = json.NewEncoder(w).Encode(map[string]any{"events": items})
+}
+
+func (a *App) deleteEvent(w http.ResponseWriter, r *http.Request)  { a.mutateDeletion(w, r, true) }
+func (a *App) restoreEvent(w http.ResponseWriter, r *http.Request) { a.mutateDeletion(w, r, false) }
+func (a *App) mutateDeletion(w http.ResponseWriter, r *http.Request, deleting bool) {
+	user := r.Context().Value(sessionContextKey{}).(auth.SessionUser)
+	revision, err := strconv.Atoi(r.URL.Query().Get("revision"))
+	if err != nil || revision < 1 {
+		http.Error(w, "revision is required", http.StatusBadRequest)
+		return
+	}
+	query := `UPDATE health_events SET deleted_at=now(),status='deleted',revision=revision+1,updated_at=now() WHERE id=$1 AND user_id=$2 AND revision=$3 AND deleted_at IS NULL`
+	if !deleting {
+		query = `UPDATE health_events SET deleted_at=NULL,status='confirmed',revision=revision+1,updated_at=now() WHERE id=$1 AND user_id=$2 AND revision=$3 AND status='deleted'`
+	}
+	tag, err := a.db.Exec(r.Context(), query, r.PathValue("id"), user.ID, revision)
+	if err != nil {
+		http.Error(w, "unable to update event", 500)
+		return
+	}
+	if tag.RowsAffected() != 1 {
+		http.Error(w, "event not found or stale", http.StatusConflict)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (a *App) calendar(w http.ResponseWriter, r *http.Request) {
