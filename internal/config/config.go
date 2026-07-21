@@ -45,14 +45,16 @@ func Load() (Config, error) {
 		Telegram:                 TelegramConfig{Token: value("TELEGRAM_BOT_TOKEN", ""), Username: strings.TrimPrefix(value("TELEGRAM_BOT_USERNAME", ""), "@"), Mode: value("TELEGRAM_MODE", "long_polling"), WebhookURL: value("TELEGRAM_WEBHOOK_URL", ""), WebhookSecret: value("TELEGRAM_WEBHOOK_SECRET", ""), SOCKS5ProxyAddr: value("TELEGRAM_SOCKS5_PROXY_ADDR", "")},
 		DataEncryptionKey:        value("DATA_ENCRYPTION_KEY", ""),
 		DataEncryptionKeyVersion: intValue("DATA_ENCRYPTION_KEY_VERSION", 1),
-		JobMaxAttempts:           intValue("JOB_MAX_ATTEMPTS", 5),
-		LLMBaseURL:               value("LLM_BASE_URL", "https://api.polza.ai/api/v1"),
-		LLMAPIKey:                value("LLM_API_KEY", ""),
-		LLMModel:                 value("LLM_MODEL", "openai/gpt-5.4-nano"),
-		AuthCodeTTL:              durationValue("AUTH_CODE_TTL", 5*time.Minute),
-		AuthMaxAttempts:          intValue("AUTH_MAX_ATTEMPTS", 5),
-		SessionTTL:               durationValue("SESSION_TTL", 30*24*time.Hour),
-		SessionCookieName:        value("SESSION_COOKIE_NAME", "health_diary_session"),
+		// One initial extraction plus one retry keeps user feedback timely while
+		// retaining the encrypted entry for an explicit later retry.
+		JobMaxAttempts:    intValue("JOB_MAX_ATTEMPTS", 2),
+		LLMBaseURL:        value("LLM_BASE_URL", "https://api.polza.ai/api/v1"),
+		LLMAPIKey:         value("LLM_API_KEY", ""),
+		LLMModel:          value("LLM_MODEL", "openai/gpt-5.4-nano"),
+		AuthCodeTTL:       durationValue("AUTH_CODE_TTL", 5*time.Minute),
+		AuthMaxAttempts:   intValue("AUTH_MAX_ATTEMPTS", 5),
+		SessionTTL:        durationValue("SESSION_TTL", 30*24*time.Hour),
+		SessionCookieName: value("SESSION_COOKIE_NAME", "health_diary_session"),
 	}
 	if cfg.HTTPAddr == "" {
 		return Config{}, fmt.Errorf("HTTP_ADDR must not be empty")
