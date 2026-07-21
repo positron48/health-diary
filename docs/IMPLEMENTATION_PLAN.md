@@ -158,7 +158,7 @@ Estimate: 1–1.5 days.
 
 ## Phase 3 — LLM extraction adapter
 
-Provider decision: Polza.ai via the OpenAI-compatible adapter, default model `openai/gpt-5-mini`; health text is sent only under the documented de-identified privacy boundary. Development may proceed with fake/live sandbox.
+Provider decision: Polza.ai via the OpenAI-compatible adapter, default model `openai/gpt-4o-mini-2024-07-18`; health text is sent only under the documented de-identified privacy boundary. Development may proceed with fake/live sandbox.
 
 Goal: transform Russian free text into validated candidate events.
 

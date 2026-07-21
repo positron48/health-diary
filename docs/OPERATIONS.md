@@ -24,6 +24,7 @@ make test        # unit + fast repository tests
 make check       # CI-equivalent checks
 make down        # stop without deleting data
 make reset-db    # explicit dev-only destructive reset with guard
+make smoke-llm   # opt-in synthetic LLM corpus; never part of CI
 ```
 
 Recommended additional commands:
@@ -38,6 +39,12 @@ make docker-build
 ```
 
 `make reset-db` must target only the explicit Compose project/volume and print the target before deletion.
+
+To compare provider model aliases outside CI, use a comma-separated list. The command sends only synthetic fixtures and prints model/pass-count/error category, never prompt or response text:
+
+```bash
+LLM_SMOKE_MODELS='openai/gpt-4o-mini-2024-07-18,openai/gpt-5.4-nano,openai/gpt-5-mini' make smoke-llm
+```
 
 ## 3. Compose design
 

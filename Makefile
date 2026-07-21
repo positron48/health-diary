@@ -1,4 +1,4 @@
-.PHONY: up down logs migrate test check reset-db web-build generate-encryption-key
+.PHONY: up down logs migrate test check reset-db web-build generate-encryption-key smoke-llm
 
 up:
 	docker compose up --build -d
@@ -27,3 +27,6 @@ reset-db:
 
 generate-encryption-key:
 	@openssl rand -base64 32
+
+smoke-llm:
+	set -a; . ./.env; set +a; go run ./cmd/llm-smoke

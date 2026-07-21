@@ -67,7 +67,7 @@ This is a lightweight ADR registry. Update status and rationale before changing 
 ### ADR-D01: LLM provider
 
 - Status: accepted
-- Decision: use Polza.ai through the OpenAI-compatible adapter, default model `openai/gpt-5-mini`.
+- Decision: use Polza.ai through the OpenAI-compatible adapter, default model `openai/gpt-4o-mini-2024-07-18`.
 - Constraint: send only the diary text and the minimal de-identified extraction context; never send Telegram identity, username, chat/message IDs, IP or session data. The adapter remains replaceable.
 - Reason: matches the neighbouring English project production model/provider choice while retaining provider isolation and strict schema validation.
 
