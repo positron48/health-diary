@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 )
 
@@ -12,6 +13,13 @@ type Config struct {
 	HTTPAddr    string
 	DatabaseURL string
 	LogLevel    slog.Level
+	Telegram    TelegramConfig
+}
+
+type TelegramConfig struct {
+	Token          string
+	Mode           string
+	AllowedUserIDs map[int64]struct{}
 }
 
 func Load() (Config, error) {
@@ -19,6 +27,7 @@ func Load() (Config, error) {
 		HTTPAddr:    value("HTTP_ADDR", ":8080"),
 		DatabaseURL: value("DATABASE_URL", ""),
 		LogLevel:    parseLogLevel(value("LOG_LEVEL", "info")),
+		Telegram:    TelegramConfig{Token: value("TELEGRAM_BOT_TOKEN", ""), Mode: value("TELEGRAM_MODE", "long_polling")},
 	}
 	if cfg.HTTPAddr == "" {
 		return Config{}, fmt.Errorf("HTTP_ADDR must not be empty")
@@ -29,7 +38,30 @@ func Load() (Config, error) {
 			return Config{}, fmt.Errorf("DATABASE_URL must be a valid URL")
 		}
 	}
+	if cfg.Telegram.Mode != "long_polling" && cfg.Telegram.Mode != "webhook" {
+		return Config{}, fmt.Errorf("TELEGRAM_MODE must be long_polling or webhook")
+	}
+	allowed, err := parseIDs(value("TELEGRAM_ALLOWED_USER_IDS", ""))
+	if err != nil {
+		return Config{}, err
+	}
+	cfg.Telegram.AllowedUserIDs = allowed
 	return cfg, nil
+}
+
+func parseIDs(raw string) (map[int64]struct{}, error) {
+	ids := map[int64]struct{}{}
+	if raw == "" {
+		return ids, nil
+	}
+	for _, part := range strings.Split(raw, ",") {
+		id, err := strconv.ParseInt(strings.TrimSpace(part), 10, 64)
+		if err != nil || id <= 0 {
+			return nil, fmt.Errorf("TELEGRAM_ALLOWED_USER_IDS contains invalid ID")
+		}
+		ids[id] = struct{}{}
+	}
+	return ids, nil
 }
 
 func value(key, fallback string) string {
