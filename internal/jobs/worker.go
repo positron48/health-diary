@@ -17,10 +17,12 @@ type Worker struct {
 	cipher    *crypto.Cipher
 	extractor llm.Extractor
 	workerID  string
+	provider  string
+	model     string
 }
 
-func NewWorker(db *pgxpool.Pool, cipher *crypto.Cipher, extractor llm.Extractor, workerID string) *Worker {
-	return &Worker{db: db, queue: NewRepository(db), cipher: cipher, extractor: extractor, workerID: workerID}
+func NewWorker(db *pgxpool.Pool, cipher *crypto.Cipher, extractor llm.Extractor, workerID, provider, model string) *Worker {
+	return &Worker{db: db, queue: NewRepository(db), cipher: cipher, extractor: extractor, workerID: workerID, provider: provider, model: model}
 }
 func (w *Worker) RunOnce(ctx context.Context) error {
 	job, err := w.queue.Claim(ctx, w.workerID)
@@ -66,7 +68,7 @@ func (w *Worker) extract(ctx context.Context, entryID string) error {
 		return fmt.Errorf("marshal validated result: %w", err)
 	}
 	var runID, batchID string
-	if err := tx.QueryRow(ctx, `INSERT INTO extraction_runs(entry_id,attempt,provider,model,prompt_version,schema_version,context_fingerprint,status,validated_result,finished_at) VALUES($1,1,'fake','fake','health-entry-v1','health-entry-v1','', 'succeeded',$2,now()) RETURNING id::text`, entryID, validatedResult).Scan(&runID); err != nil {
+	if err := tx.QueryRow(ctx, `INSERT INTO extraction_runs(entry_id,attempt,provider,model,prompt_version,schema_version,context_fingerprint,status,validated_result,finished_at) VALUES($1,1,$2,$3,'health-entry-v1','health-entry-v1','', 'succeeded',$4,now()) RETURNING id::text`, entryID, w.provider, w.model, validatedResult).Scan(&runID); err != nil {
 		return err
 	}
 	if err := tx.QueryRow(ctx, `INSERT INTO event_batches(user_id,entry_id,extraction_run_id) VALUES($1,$2,$3) RETURNING id::text`, userID, entryID, runID).Scan(&batchID); err != nil {

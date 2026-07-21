@@ -40,7 +40,7 @@ func (h *Handler) Handle(ctx context.Context, bot *tgbotapi.BotAPI, update tgbot
 		return nil
 	}
 	if strings.HasPrefix(text, "/") {
-		return h.command(ctx, bot, m.Chat.ID, int64(m.From.ID), text)
+		return h.command(ctx, bot, m.Chat.ID, int64(m.From.ID), m.From.UserName, text)
 	}
 	_, err := h.ingest.CaptureTelegramText(ctx, ingest.Capture{UpdateID: int64(update.UpdateID), TelegramUserID: int64(m.From.ID), MessageID: int64(m.MessageID), Username: m.From.UserName, Text: text, SentAt: m.Time()})
 	if err != nil {
@@ -50,7 +50,7 @@ func (h *Handler) Handle(ctx context.Context, bot *tgbotapi.BotAPI, update tgbot
 	return err
 }
 
-func (h *Handler) command(ctx context.Context, bot *tgbotapi.BotAPI, chatID, telegramUserID int64, text string) error {
+func (h *Handler) command(ctx context.Context, bot *tgbotapi.BotAPI, chatID, telegramUserID int64, username, text string) error {
 	command := strings.Fields(strings.TrimPrefix(text, "/"))
 	if len(command) == 0 {
 		return nil
@@ -59,7 +59,7 @@ func (h *Handler) command(ctx context.Context, bot *tgbotapi.BotAPI, chatID, tel
 	switch strings.Split(command[0], "@")[0] {
 	case "start":
 		if len(command) == 2 && strings.HasPrefix(command[1], "login_") && h.auth != nil {
-			code, err := h.auth.BindTelegram(ctx, strings.TrimPrefix(command[1], "login_"), telegramUserID)
+			code, err := h.auth.BindTelegram(ctx, strings.TrimPrefix(command[1], "login_"), telegramUserID, username)
 			if err != nil {
 				reply = "Ссылка для входа недействительна или истекла."
 			} else {

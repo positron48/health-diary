@@ -36,7 +36,10 @@ func (s *Service) CreateChallenge(ctx context.Context) (Challenge, error) {
 	return Challenge{ID: id, Token: token, ExpiresAt: expires}, err
 }
 
-func (s *Service) BindTelegram(ctx context.Context, token string, telegramUserID int64) (string, error) {
+// BindTelegram creates or refreshes the allowed Telegram user's local account
+// before binding a one-time web-login challenge. A first login therefore does
+// not depend on the user having sent a journal entry beforehand.
+func (s *Service) BindTelegram(ctx context.Context, token string, telegramUserID int64, username string) (string, error) {
 	code, codeHash, err := NewCode()
 	if err != nil {
 		return "", err
@@ -47,7 +50,10 @@ func (s *Service) BindTelegram(ctx context.Context, token string, telegramUserID
 	}
 	defer tx.Rollback(ctx)
 	var userID string
-	if err = tx.QueryRow(ctx, `SELECT id::text FROM users WHERE telegram_user_id=$1 AND status='active'`, telegramUserID).Scan(&userID); err != nil {
+	if err = tx.QueryRow(ctx, `INSERT INTO users(telegram_user_id,telegram_username)
+        VALUES($1,$2)
+        ON CONFLICT (telegram_user_id) DO UPDATE SET telegram_username=EXCLUDED.telegram_username,updated_at=now()
+        RETURNING id::text`, telegramUserID, username).Scan(&userID); err != nil {
 		return "", err
 	}
 	tag, err := tx.Exec(ctx, `UPDATE auth_challenges SET user_id=$2,code_hash=$3,bound_at=now() WHERE public_token_hash=$1 AND expires_at>now() AND consumed_at IS NULL AND locked_at IS NULL`, Hash(token), userID, codeHash)
