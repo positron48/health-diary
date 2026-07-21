@@ -16,7 +16,13 @@ func RunLongPolling(ctx context.Context, token, socks5Address string, handler *H
 	if _, err = api.Request(tgbotapi.DeleteWebhookConfig{DropPendingUpdates: false}); err != nil {
 		return telegramAPIError("disable Telegram webhook for long polling")
 	}
-	updates := api.GetUpdatesChan(tgbotapi.NewUpdate(0))
+	// Keep Telegram's long-poll request below the HTTP client's 40 second
+	// timeout. Leaving Timeout at the library default (zero) is unreliable
+	// through the production SOCKS5 tunnel and causes retry loops.
+	updateConfig := tgbotapi.NewUpdate(0)
+	updateConfig.Timeout = 25
+	updateConfig.AllowedUpdates = []string{"message", "callback_query"}
+	updates := api.GetUpdatesChan(updateConfig)
 	defer api.StopReceivingUpdates()
 	outboxTicker := time.NewTicker(time.Second)
 	defer outboxTicker.Stop()

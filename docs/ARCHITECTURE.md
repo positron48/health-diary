@@ -73,7 +73,7 @@ There is no Redis, message broker, gRPC gateway or separate frontend deployment 
 - Strict JSON Schema response.
 - Provider/model/base URL/proxy configured through env.
 - Provider-specific retries only for transport errors and `429/5xx` according to `Retry-After`.
-- Any SOCKS5 proxy is scoped to the LLM HTTP client; never use global `HTTP_PROXY`/`HTTPS_PROXY`.
+- SOCKS5 transports are scoped per outbound client; Telegram uses `TELEGRAM_SOCKS5_PROXY_ADDR` in production and no process-wide `HTTP_PROXY`/`HTTPS_PROXY` is set.
 
 ## 4. Processing flow
 
