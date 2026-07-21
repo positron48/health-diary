@@ -312,9 +312,9 @@ func (a *App) mutateDeletion(w http.ResponseWriter, r *http.Request, deleting bo
 		http.Error(w, "revision is required", http.StatusBadRequest)
 		return
 	}
-	query := `UPDATE health_events SET deleted_at=now(),status='deleted',revision=revision+1,updated_at=now() WHERE id=$1 AND user_id=$2 AND revision=$3 AND deleted_at IS NULL`
+	query := `WITH before AS (SELECT id,status,revision,attributes FROM health_events WHERE id=$1 AND user_id=$2 AND revision=$3 AND deleted_at IS NULL FOR UPDATE), updated AS (UPDATE health_events e SET deleted_from_status=b.status,deleted_at=now(),status='deleted',revision=e.revision+1,updated_at=now() FROM before b WHERE e.id=b.id RETURNING e.id,e.revision,e.status,e.attributes,b.status AS old_status,b.revision AS old_revision,b.attributes AS old_attributes) INSERT INTO event_revisions(event_id,revision,changed_by,before_data,after_data,reason) SELECT id,revision,'web_user',jsonb_build_object('status',old_status,'revision',old_revision,'attributes',old_attributes),jsonb_build_object('status',status,'revision',revision,'attributes',attributes),'user deletion' FROM updated`
 	if !deleting {
-		query = `UPDATE health_events SET deleted_at=NULL,status='confirmed',revision=revision+1,updated_at=now() WHERE id=$1 AND user_id=$2 AND revision=$3 AND status='deleted'`
+		query = `WITH before AS (SELECT id,status,revision,attributes,deleted_from_status FROM health_events WHERE id=$1 AND user_id=$2 AND revision=$3 AND status='deleted' FOR UPDATE), updated AS (UPDATE health_events e SET deleted_at=NULL,status=COALESCE(b.deleted_from_status,'confirmed'),deleted_from_status=NULL,revision=e.revision+1,updated_at=now() FROM before b WHERE e.id=b.id RETURNING e.id,e.revision,e.status,e.attributes,b.status AS old_status,b.revision AS old_revision,b.attributes AS old_attributes) INSERT INTO event_revisions(event_id,revision,changed_by,before_data,after_data,reason) SELECT id,revision,'web_user',jsonb_build_object('status',old_status,'revision',old_revision,'attributes',old_attributes),jsonb_build_object('status',status,'revision',revision,'attributes',attributes),'user restore' FROM updated`
 	}
 	tag, err := a.db.Exec(r.Context(), query, r.PathValue("id"), user.ID, revision)
 	if err != nil {
