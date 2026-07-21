@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"embed"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -10,6 +11,7 @@ import (
 	"net/http"
 	"time"
 
+	"health-diary/internal/auth"
 	"health-diary/internal/bot"
 	"health-diary/internal/config"
 	"health-diary/internal/crypto"
@@ -19,6 +21,7 @@ import (
 	"health-diary/internal/llm"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 // webAssets contains the production Vue bundle. Docker replaces the small
@@ -30,6 +33,8 @@ var webAssets embed.FS
 type App struct {
 	config config.Config
 	logger *slog.Logger
+	db     *pgxpool.Pool
+	auth   *auth.Service
 }
 
 func New(cfg config.Config, logger *slog.Logger) *App {
@@ -37,6 +42,15 @@ func New(cfg config.Config, logger *slog.Logger) *App {
 }
 
 func (a *App) Run(ctx context.Context, shutdownTimeout time.Duration) error {
+	if a.config.DatabaseURL != "" {
+		pool, err := database.Open(ctx, a.config.DatabaseURL)
+		if err != nil {
+			return err
+		}
+		defer pool.Close()
+		a.db = pool
+		a.auth = auth.NewService(pool, a.config.AuthCodeTTL, a.config.SessionTTL, a.config.AuthMaxAttempts)
+	}
 	if a.config.Telegram.Token != "" {
 		if a.config.DataEncryptionKey == "" || len(a.config.Telegram.AllowedUserIDs) == 0 {
 			return fmt.Errorf("telegram requires DATA_ENCRYPTION_KEY and TELEGRAM_ALLOWED_USER_IDS")
@@ -45,11 +59,10 @@ func (a *App) Run(ctx context.Context, shutdownTimeout time.Duration) error {
 		if err != nil {
 			return err
 		}
-		pool, err := database.Open(ctx, a.config.DatabaseURL)
-		if err != nil {
-			return err
+		pool := a.db
+		if pool == nil {
+			return fmt.Errorf("telegram requires DATABASE_URL")
 		}
-		defer pool.Close()
 		handler := bot.NewHandler(ingest.New(pool, cipher, a.config.JobMaxAttempts), a.config.Telegram.AllowedUserIDs, a.logger)
 		var extractor llm.Extractor = llm.Fake{}
 		if a.config.LLMAPIKey != "" {
@@ -102,6 +115,8 @@ func (a *App) Handler() http.Handler {
 		w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
 		writeText(w, http.StatusOK, "health_diary_up 1\n")
 	})
+	mux.HandleFunc("POST /auth/challenges", a.createChallenge)
+	mux.HandleFunc("POST /auth/challenges/{id}/verify", a.verifyChallenge)
 	mux.HandleFunc("GET /api/health-data", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
@@ -113,6 +128,43 @@ func (a *App) Handler() http.Handler {
 	}
 	mux.Handle("GET /", http.FileServer(http.FS(web)))
 	return mux
+}
+
+func (a *App) createChallenge(w http.ResponseWriter, r *http.Request) {
+	if a.auth == nil {
+		http.Error(w, "database is unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	challenge, err := a.auth.CreateChallenge(r.Context())
+	if err != nil {
+		http.Error(w, "unable to create challenge", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	_ = json.NewEncoder(w).Encode(map[string]any{"challenge_id": challenge.ID, "token": challenge.Token, "expires_at": challenge.ExpiresAt})
+}
+
+func (a *App) verifyChallenge(w http.ResponseWriter, r *http.Request) {
+	if a.auth == nil {
+		http.Error(w, "database is unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	var input struct {
+		Code string `json:"code"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1024)).Decode(&input); err != nil {
+		http.Error(w, "invalid request", http.StatusBadRequest)
+		return
+	}
+	_, token, err := a.auth.Verify(r.Context(), r.PathValue("id"), input.Code)
+	if err != nil {
+		http.Error(w, "invalid or expired code", http.StatusUnauthorized)
+		return
+	}
+	http.SetCookie(w, &http.Cookie{Name: a.config.SessionCookieName, Value: token, Path: "/", HttpOnly: true, Secure: true, SameSite: http.SameSiteLaxMode, MaxAge: int(a.config.SessionTTL.Seconds())})
+	w.Header().Set("Cache-Control", "no-store")
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (a *App) ready(w http.ResponseWriter, r *http.Request) {
