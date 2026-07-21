@@ -29,7 +29,14 @@ func main() {
 	if len(models) == 0 {
 		models = []string{cfg.LLMModel}
 	}
-	fixtures := []fixture{{"Тестовая запись: голова болит.", []string{"pain_observation"}}, {"Тестовая запись: принял ибупрофен 200 мг.", []string{"medication_intake"}}, {"Тестовая запись: заметка без симптомов.", []string{"note"}}}
+	fixtures := []fixture{
+		{"Тестовая запись: голова болит.", []string{"pain_observation"}},
+		{"Тестовая запись: принял ибупрофен 200 мг.", []string{"medication_intake"}},
+		{"Тестовая запись: заметка без симптомов.", []string{"note"}},
+		{"Тестовая запись: спал с 23:30 до 07:10, просыпался один раз.", []string{"sleep"}},
+		{"Тестовая запись: после прогулки 35 минут чувствую себя лучше.", []string{"activity"}},
+		{"Тестовая запись: энергия 4 из 10, настроение 6 из 10.", []string{"wellbeing"}},
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
 	failed := false

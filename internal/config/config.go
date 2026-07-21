@@ -39,7 +39,7 @@ func Load() (Config, error) {
 		JobMaxAttempts:           intValue("JOB_MAX_ATTEMPTS", 5),
 		LLMBaseURL:               value("LLM_BASE_URL", "https://api.polza.ai/api/v1"),
 		LLMAPIKey:                value("LLM_API_KEY", ""),
-		LLMModel:                 value("LLM_MODEL", "openai/gpt-4o-mini-2024-07-18"),
+		LLMModel:                 value("LLM_MODEL", "openai/gpt-5.4-nano"),
 	}
 	if cfg.HTTPAddr == "" {
 		return Config{}, fmt.Errorf("HTTP_ADDR must not be empty")
