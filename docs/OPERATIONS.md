@@ -2,8 +2,8 @@
 
 ## 1. Deployment model
 
-- Application repository: GitLab, default branch `master`.
-- Container registry: GitLab Container Registry.
+- Application repository: GitHub, default branch `master`.
+- Container registry: GitHub Container Registry (`ghcr.io/positron48/health-diary`).
 - GitOps repository: existing `/Users/antonfilatov/www/my/k3s/devops-time-host`.
 - Production cluster: existing k3s + Flux.
 - Namespace/deployment/service: `health-diary`.

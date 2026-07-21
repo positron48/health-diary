@@ -40,10 +40,10 @@ This is a lightweight ADR registry. Update status and rationale before changing 
 - Decision: one-time Telegram code creates a revocable server-side session in an HttpOnly cookie; no browser-stored JWT.
 - Reason: simple revocation and smaller token exposure surface.
 
-### ADR-007: GitLab application CI, existing Flux GitOps
+### ADR-007: GitHub Actions/GHCR application CI, existing Flux GitOps
 
 - Status: accepted
-- Decision: GitLab CI tests/builds and pushes immutable image plus `latest`; Flux tracks the digest and updates `devops-time-host`.
+- Decision: GitHub Actions tests/builds and pushes immutable GHCR image plus `latest`; Flux tracks the digest and updates `devops-time-host`.
 - Reason: preserves the existing k3s deployment model without giving CI direct cluster credentials.
 
 ### ADR-008: Single-user-first, multi-user schema
@@ -75,9 +75,8 @@ This is a lightweight ADR registry. Update status and rationale before changing 
 
 ### ADR-D02: Production domain
 
-- Status: deferred
-- Required before GitOps phase.
-- Placeholder: `health.qantrix.ru` is not approved and must not be committed as final without confirmation.
+- Status: accepted
+- Decision: `health.qantrix.ru` is the public HTTPS hostname for the PWA and Telegram webhook.
 
 ### ADR-D03: Raw entry retention
 
