@@ -19,7 +19,13 @@ web-build:
 	npm --prefix web ci
 	npm --prefix web run build
 
-check: test web-build
+check:
+	@test -z "$$(gofmt -l $$(find . -name '*.go' -not -path './web/*'))"
+	go vet ./...
+	go test ./...
+	npm --prefix web ci
+	npm --prefix web run build
+	git diff --check
 
 reset-db:
 	@echo "Removing explicit Compose volume health-diary_health_diary_postgres"

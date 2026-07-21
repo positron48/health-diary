@@ -26,7 +26,9 @@ type Repository struct {
 func NewRepository(db interface {
 	Exec(context.Context, string, ...any) (pgconn.CommandTag, error)
 	QueryRow(context.Context, string, ...any) pgx.Row
-}) *Repository { return &Repository{db: db} }
+}) *Repository {
+	return &Repository{db: db}
+}
 
 func (r *Repository) Enqueue(ctx context.Context, kind string, payload any, maxAttempts int) error {
 	if kind == "" || maxAttempts < 1 {

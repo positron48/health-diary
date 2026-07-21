@@ -1,0 +1,9 @@
+{
+  "name": "Дневник здоровья",
+  "short_name": "Дневник",
+  "lang": "ru",
+  "display": "standalone",
+  "start_url": "/",
+  "background_color": "#f4f7f3",
+  "theme_color": "#216640"
+}
