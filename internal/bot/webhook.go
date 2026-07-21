@@ -12,8 +12,8 @@ import (
 )
 
 // ConfigureWebhook registers Telegram's HTTPS endpoint with its secret header.
-func ConfigureWebhook(token, url, secret string) (*tgbotapi.BotAPI, error) {
-	api, err := tgbotapi.NewBotAPI(token)
+func ConfigureWebhook(token, url, secret, socks5Address string) (*tgbotapi.BotAPI, error) {
+	api, err := NewAPI(token, socks5Address)
 	if err != nil {
 		return nil, err
 	}

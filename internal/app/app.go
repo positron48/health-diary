@@ -92,7 +92,7 @@ func (a *App) Run(ctx context.Context, shutdownTimeout time.Duration) error {
 			}
 		}()
 		if a.config.Telegram.Mode == "webhook" {
-			api, err := bot.ConfigureWebhook(a.config.Telegram.Token, a.config.Telegram.WebhookURL, a.config.Telegram.WebhookSecret)
+			api, err := bot.ConfigureWebhook(a.config.Telegram.Token, a.config.Telegram.WebhookURL, a.config.Telegram.WebhookSecret, a.config.Telegram.SOCKS5ProxyAddr)
 			if err != nil {
 				return fmt.Errorf("configure telegram webhook: %w", err)
 			}
@@ -100,7 +100,7 @@ func (a *App) Run(ctx context.Context, shutdownTimeout time.Duration) error {
 			go bot.RunOutbox(ctx, api, pool)
 		} else {
 			go func() {
-				if err := bot.RunLongPolling(ctx, a.config.Telegram.Token, handler, a.logger); err != nil {
+				if err := bot.RunLongPolling(ctx, a.config.Telegram.Token, a.config.Telegram.SOCKS5ProxyAddr, handler, a.logger); err != nil {
 					a.logger.Error("telegram polling stopped", "error", err)
 				}
 			}()
