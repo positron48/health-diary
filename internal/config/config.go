@@ -7,6 +7,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 )
 
 type Config struct {
@@ -20,6 +21,10 @@ type Config struct {
 	LLMBaseURL               string
 	LLMAPIKey                string
 	LLMModel                 string
+	AuthCodeTTL              time.Duration
+	AuthMaxAttempts          int
+	SessionTTL               time.Duration
+	SessionCookieName        string
 }
 
 type TelegramConfig struct {
@@ -40,6 +45,10 @@ func Load() (Config, error) {
 		LLMBaseURL:               value("LLM_BASE_URL", "https://api.polza.ai/api/v1"),
 		LLMAPIKey:                value("LLM_API_KEY", ""),
 		LLMModel:                 value("LLM_MODEL", "openai/gpt-5.4-nano"),
+		AuthCodeTTL:              durationValue("AUTH_CODE_TTL", 5*time.Minute),
+		AuthMaxAttempts:          intValue("AUTH_MAX_ATTEMPTS", 5),
+		SessionTTL:               durationValue("SESSION_TTL", 30*24*time.Hour),
+		SessionCookieName:        value("SESSION_COOKIE_NAME", "health_diary_session"),
 	}
 	if cfg.HTTPAddr == "" {
 		return Config{}, fmt.Errorf("HTTP_ADDR must not be empty")
@@ -71,6 +80,18 @@ func intValue(key string, fallback int) int {
 		return fallback
 	}
 	return n
+}
+
+func durationValue(key string, fallback time.Duration) time.Duration {
+	raw := value(key, "")
+	if raw == "" {
+		return fallback
+	}
+	parsed, err := time.ParseDuration(raw)
+	if err != nil || parsed <= 0 {
+		return fallback
+	}
+	return parsed
 }
 
 func parseIDs(raw string) (map[int64]struct{}, error) {
