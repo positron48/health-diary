@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"embed"
+	"encoding/csv"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -10,6 +11,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"health-diary/internal/analytics"
@@ -125,6 +127,8 @@ func (a *App) Handler() http.Handler {
 	mux.Handle("GET /api/me", a.requireSession(http.HandlerFunc(a.me)))
 	mux.Handle("GET /calendar", a.requireSession(http.HandlerFunc(a.calendar)))
 	mux.Handle("GET /events", a.requireSession(http.HandlerFunc(a.events)))
+	mux.Handle("GET /batches/pending", a.requireSession(http.HandlerFunc(a.pendingBatches)))
+	mux.Handle("GET /exports", a.requireSession(http.HandlerFunc(a.exportEvents)))
 	mux.Handle("DELETE /events/{id}", a.requireSession(http.HandlerFunc(a.deleteEvent)))
 	mux.Handle("POST /events/{id}/restore", a.requireSession(http.HandlerFunc(a.restoreEvent)))
 	mux.Handle("POST /batches/{id}/confirm", a.requireSession(http.HandlerFunc(a.confirmBatch)))
@@ -190,6 +194,89 @@ func (a *App) events(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	_ = json.NewEncoder(w).Encode(map[string]any{"events": items})
+}
+
+func (a *App) pendingBatches(w http.ResponseWriter, r *http.Request) {
+	user := r.Context().Value(sessionContextKey{}).(auth.SessionUser)
+	rows, err := a.db.Query(r.Context(), `SELECT b.id::text,b.version,b.created_at,e.id::text,e.kind,e.occurred_at,e.attributes,e.revision
+        FROM event_batches b JOIN health_events e ON e.batch_id=b.id
+        WHERE b.user_id=$1 AND b.status='pending' AND e.deleted_at IS NULL
+        ORDER BY b.created_at DESC,e.occurred_at ASC`, user.ID)
+	if err != nil {
+		http.Error(w, "unable to read pending batches", 500)
+		return
+	}
+	defer rows.Close()
+	type batch struct {
+		ID        string           `json:"id"`
+		Version   int              `json:"version"`
+		CreatedAt time.Time        `json:"created_at"`
+		Events    []map[string]any `json:"events"`
+	}
+	byID := map[string]*batch{}
+	ordered := []*batch{}
+	for rows.Next() {
+		var id, eventID, kind string
+		var version, revision int
+		var created, occurred time.Time
+		var attrs json.RawMessage
+		if err := rows.Scan(&id, &version, &created, &eventID, &kind, &occurred, &attrs, &revision); err != nil {
+			http.Error(w, "unable to read pending batches", 500)
+			return
+		}
+		b := byID[id]
+		if b == nil {
+			b = &batch{ID: id, Version: version, CreatedAt: created}
+			byID[id] = b
+			ordered = append(ordered, b)
+		}
+		b.Events = append(b.Events, map[string]any{"id": eventID, "kind": kind, "occurred_at": occurred, "attributes": attrs, "revision": revision})
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	_ = json.NewEncoder(w).Encode(map[string]any{"batches": ordered})
+}
+
+func (a *App) exportEvents(w http.ResponseWriter, r *http.Request) {
+	user := r.Context().Value(sessionContextKey{}).(auth.SessionUser)
+	rows, err := a.db.Query(r.Context(), `SELECT id::text,kind,occurred_at,time_precision,attributes,revision FROM health_events WHERE user_id=$1 AND status='confirmed' AND deleted_at IS NULL ORDER BY occurred_at`, user.ID)
+	if err != nil {
+		http.Error(w, "unable to export events", 500)
+		return
+	}
+	defer rows.Close()
+	type exportedEvent struct {
+		ID            string          `json:"id"`
+		Kind          string          `json:"kind"`
+		OccurredAt    time.Time       `json:"occurred_at"`
+		TimePrecision string          `json:"time_precision"`
+		Attributes    json.RawMessage `json:"attributes"`
+		Revision      int             `json:"revision"`
+	}
+	items := []exportedEvent{}
+	for rows.Next() {
+		var item exportedEvent
+		if err := rows.Scan(&item.ID, &item.Kind, &item.OccurredAt, &item.TimePrecision, &item.Attributes, &item.Revision); err != nil {
+			http.Error(w, "unable to export events", 500)
+			return
+		}
+		items = append(items, item)
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	if strings.EqualFold(r.URL.Query().Get("format"), "csv") {
+		w.Header().Set("Content-Type", "text/csv; charset=utf-8")
+		w.Header().Set("Content-Disposition", `attachment; filename="health-diary-events.csv"`)
+		writer := csv.NewWriter(w)
+		_ = writer.Write([]string{"id", "kind", "occurred_at", "time_precision", "attributes", "revision"})
+		for _, item := range items {
+			_ = writer.Write([]string{item.ID, item.Kind, item.OccurredAt.UTC().Format(time.RFC3339), item.TimePrecision, string(item.Attributes), strconv.Itoa(item.Revision)})
+		}
+		writer.Flush()
+		return
+	}
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.Header().Set("Content-Disposition", `attachment; filename="health-diary-events.json"`)
+	_ = json.NewEncoder(w).Encode(map[string]any{"schema_version": "health-diary-export-v1", "generated_at": time.Now().UTC(), "timezone": user.Timezone, "events": items})
 }
 
 func (a *App) deleteEvent(w http.ResponseWriter, r *http.Request)  { a.mutateDeletion(w, r, true) }
@@ -275,7 +362,11 @@ func (a *App) createChallenge(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	_ = json.NewEncoder(w).Encode(map[string]any{"challenge_id": challenge.ID, "token": challenge.Token, "expires_at": challenge.ExpiresAt})
+	response := map[string]any{"challenge_id": challenge.ID, "token": challenge.Token, "expires_at": challenge.ExpiresAt}
+	if a.config.Telegram.Username != "" {
+		response["telegram_url"] = "https://t.me/" + a.config.Telegram.Username + "?start=login_" + challenge.Token
+	}
+	_ = json.NewEncoder(w).Encode(response)
 }
 
 func (a *App) verifyChallenge(w http.ResponseWriter, r *http.Request) {

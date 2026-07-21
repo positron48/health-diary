@@ -29,6 +29,7 @@ type Config struct {
 
 type TelegramConfig struct {
 	Token          string
+	Username       string
 	Mode           string
 	AllowedUserIDs map[int64]struct{}
 }
@@ -38,7 +39,7 @@ func Load() (Config, error) {
 		HTTPAddr:                 value("HTTP_ADDR", ":8080"),
 		DatabaseURL:              value("DATABASE_URL", ""),
 		LogLevel:                 parseLogLevel(value("LOG_LEVEL", "info")),
-		Telegram:                 TelegramConfig{Token: value("TELEGRAM_BOT_TOKEN", ""), Mode: value("TELEGRAM_MODE", "long_polling")},
+		Telegram:                 TelegramConfig{Token: value("TELEGRAM_BOT_TOKEN", ""), Username: strings.TrimPrefix(value("TELEGRAM_BOT_USERNAME", ""), "@"), Mode: value("TELEGRAM_MODE", "long_polling")},
 		DataEncryptionKey:        value("DATA_ENCRYPTION_KEY", ""),
 		DataEncryptionKeyVersion: intValue("DATA_ENCRYPTION_KEY_VERSION", 1),
 		JobMaxAttempts:           intValue("JOB_MAX_ATTEMPTS", 5),
