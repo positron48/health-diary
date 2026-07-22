@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	_ "time/tzdata"
 
 	"health-diary/internal/analytics"
 	"health-diary/internal/auth"
@@ -377,8 +378,10 @@ func userLocation(timezone string) *time.Location {
 	}
 	// Existing imported/early accounts may have an empty or invalid timezone.
 	// The product default is Moscow, and analytics must remain available.
-	loc, _ := time.LoadLocation("Europe/Moscow")
-	return loc
+	if loc, err := time.LoadLocation("Europe/Moscow"); err == nil {
+		return loc
+	}
+	return time.UTC
 }
 
 type sessionContextKey struct{}
