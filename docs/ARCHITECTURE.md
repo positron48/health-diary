@@ -104,6 +104,13 @@ There is no Redis, message broker, gRPC gateway or separate frontend deployment 
 3. Cache only derived, non-sensitive aggregates if profiling shows a need.
 4. Optional LLM summary receives aggregates, not raw health notes or identifiers.
 
+### 4.4 Web capture
+
+1. An authenticated no-store request submits free-form text with an idempotency key.
+2. The service encrypts a `source_type='web'` journal entry and queues `extract_entry` in one transaction.
+3. The existing worker decrypts only that entry, extracts candidate events using the user's timezone and creates a pending batch.
+4. The browser reviews and confirms the batch through the existing inbox; only then do calendar and analytics include it.
+
 ## 5. Planned repository layout
 
 ```text

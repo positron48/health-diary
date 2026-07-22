@@ -26,4 +26,20 @@ describe('canonical API modules', () => {
     await journalApi.reopenEpisode('episode', 2)
     expect(fetcher).toHaveBeenCalledWith('/api/v1/episodes/episode/reopen', expect.objectContaining({ body: JSON.stringify({ revision: 2 }) }))
   })
+
+  it('загружает последние 10 событий выбранного пользовательского дня', async () => {
+    fetcher.mockResolvedValue(new Response(JSON.stringify({ events: [] }), { status: 200, headers: { 'Content-Type': 'application/json' } }))
+    await journalApi.dayPreview('2026-07-22')
+    expect(fetcher).toHaveBeenCalledWith('/api/v1/events?from=2026-07-22&to=2026-07-22&limit=10', expect.any(Object))
+  })
+
+  it('создаёт web-запись с ключом идемпотентности', async () => {
+    fetcher.mockResolvedValue(new Response(JSON.stringify({ entry_id: 'entry', status: 'queued' }), { status: 201, headers: { 'Content-Type': 'application/json' } }))
+    await journalApi.createEntry('болит голова', 'request-123')
+    expect(fetcher).toHaveBeenCalledWith('/api/v1/entries', expect.objectContaining({
+      method: 'POST',
+      body: JSON.stringify({ text: 'болит голова' }),
+      headers: expect.objectContaining({ 'Idempotency-Key': 'request-123' }),
+    }))
+  })
 })

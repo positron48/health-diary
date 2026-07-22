@@ -9,16 +9,24 @@ import (
 
 type Fake struct{}
 
-func (Fake) Extract(_ context.Context, text string) (Result, error) {
-	lower := strings.ToLower(text)
-	now := time.Now().UTC()
+func (Fake) Extract(_ context.Context, input ExtractionRequest) (Result, error) {
+	lower := strings.ToLower(input.Text)
+	now := input.Reference
+	if now.IsZero() {
+		now = time.Now()
+	}
+	loc, err := time.LoadLocation(input.Timezone)
+	if err != nil {
+		loc = time.UTC
+	}
+	now = now.In(loc)
 	events := []Event{}
 
 	// Multi-day headache narrative used as the regression fixture for detailing.
 	if strings.Contains(lower, "цитрамон") && strings.Contains(lower, "голов") {
-		day := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
+		day := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, loc)
 		if strings.Contains(lower, "20 июля") || strings.Contains(lower, "20.07") {
-			day = time.Date(now.Year(), time.July, 20, 0, 0, 0, 0, time.UTC)
+			day = time.Date(now.Year(), time.July, 20, 0, 0, 0, 0, loc)
 		}
 		events = []Event{
 			{ClientRef: "e1", Kind: "pain_observation", OccurredAt: day.Add(12 * time.Hour).Format(time.RFC3339), TimePrecision: "approximate", Data: map[string]any{"symptom_type": "headache", "phase": "start", "locations": []any{"top_of_head"}}},

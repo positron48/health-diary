@@ -234,6 +234,9 @@ overview uses small labeled icons; specialized modes use their stable metric:
 An empty cell means `Нет записей`, never “healthy” or “no headache”. Explicit
 no-headache check-ins need their own text/icon if that feature is enabled.
 Switching mode must preserve month and selected day and must not fetch raw text.
+Selecting a day loads a no-store preview of its ten latest confirmed events.
+Desktop shows it in the persistent side pane; mobile shows it below the grid.
+The pane links to the complete `/day/:date` timeline and offers `Добавить запись`.
 
 ### 6.5 Day timeline
 
@@ -250,6 +253,11 @@ continuity. Every event card has:
 After soft deletion, keep a local undo toast for the supported restore window.
 If the server reports a revision conflict, keep the user's draft and offer
 `Загрузить актуальную версию` instead of silently overwriting it.
+
+Calendar and day timeline expose `Добавить запись`. The shared form accepts
+free-form text, keeps the draft only in memory and submits it for extraction.
+It must state that recognized facts appear in `Входящие` and do not affect
+analytics before confirmation.
 
 ### 6.6 Event edit
 

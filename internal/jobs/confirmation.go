@@ -8,17 +8,21 @@ import (
 	"health-diary/internal/llm"
 )
 
-func confirmationText(events []llm.Event) string {
+func confirmationText(events []llm.Event, timezone string) string {
+	loc, err := time.LoadLocation(timezone)
+	if err != nil {
+		loc = time.UTC
+	}
 	lines := make([]string, 0, len(events)+2)
 	lines = append(lines, "Распознано:")
 	for _, event := range events {
-		lines = append(lines, "• "+eventDescription(event))
+		lines = append(lines, "• "+eventDescription(event, loc))
 	}
 	lines = append(lines, "Подтвердите весь список, только если всё верно.")
 	return strings.Join(lines, "\n")
 }
 
-func eventDescription(event llm.Event) string {
+func eventDescription(event llm.Event, loc *time.Location) string {
 	data := event.Data
 	title := map[string]string{
 		"pain_observation":  "Боль",
@@ -67,7 +71,7 @@ func eventDescription(event llm.Event) string {
 			if event.TimePrecision != "exact" {
 				prefix = "около"
 			}
-			parts = append(parts, prefix+" "+occurredAt.UTC().Format("15:04"))
+			parts = append(parts, prefix+" "+occurredAt.In(loc).Format("15:04"))
 		}
 	}
 	if len(parts) == 0 {

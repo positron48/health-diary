@@ -2,6 +2,11 @@ import { API_BASE, json, request } from './client'
 import type { DayResponse, Episode, HealthEvent, PendingBatch } from './types'
 export const journalApi = {
   events: (params = '') => request<{ events: HealthEvent[] }>(`${API_BASE}/events${params}`),
+  dayPreview: (date: string) => request<{ events: HealthEvent[] }>(`${API_BASE}/events?from=${encodeURIComponent(date)}&to=${encodeURIComponent(date)}&limit=10`),
+  createEntry: (text: string, idempotencyKey: string, date?: string) => request<{ entry_id: string; status: string }>(
+    `${API_BASE}/entries`,
+    { ...json('POST', { text, ...(date ? { date } : {}) }), headers: { 'Idempotency-Key': idempotencyKey } },
+  ),
   event: (id: string) => request<HealthEvent>(`${API_BASE}/events/${id}`),
   day: (date: string) => request<DayResponse>(`${API_BASE}/days/${date}`),
   pending: () => request<{ batches: PendingBatch[] }>(`${API_BASE}/batches?status=pending`),

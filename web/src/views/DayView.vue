@@ -22,6 +22,7 @@ onMounted(()=>load())
       <p class="eyebrow">Хронология</p>
       <h1>{{ new Date(`${date}T12:00:00`).toLocaleDateString('ru-RU',{dateStyle:'long'}) }}</h1>
       <p class="muted">{{ data?.events.length || 0 }} событий<span v-if="data?.pending_count"> · {{data.pending_count}} ждут проверки</span></p>
+      <RouterLink class="button add-entry" :to="`/entries/new?date=${date}`">Добавить запись</RouterLink>
     </header>
     <StatePanel v-if="loading" kind="loading"/>
     <StatePanel v-else-if="error" kind="error" :message="error" @retry="load()"/>
@@ -37,3 +38,6 @@ onMounted(()=>load())
     <SourceEntrySheet :entry-id="sourceId" @close="sourceId=null" />
   </div>
 </template>
+<style scoped>
+.add-entry { display: inline-flex; align-items: center; text-decoration: none; }
+</style>

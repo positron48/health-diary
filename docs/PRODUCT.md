@@ -68,6 +68,7 @@ Headache-specific fields include intensity `0..10`, location, laterality, qualit
 - Telegram-code authentication.
 - Month calendar with modes: overview, pain, medication, activity, sleep, wellbeing.
 - Day timeline with raw-source link and edit/delete controls.
+- Free-form web capture from calendar/day views through the same extraction and confirmation flow as Telegram.
 - Episode detail with observations, related medication and duration.
 - Basic 7/30/60/90-day summary.
 - Explicit pending/unconfirmed items inbox.

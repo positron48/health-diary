@@ -7,7 +7,8 @@ import (
 
 const systemPrompt = `Return only one JSON object with exactly {summary,events}; no markdown.
 events must contain 1 to 12 objects. Every event MUST have a distinct non-empty client_ref in this exact sequence: e1, e2, e3... (one reference per event; never null, number, UUID, or repeated).
-Each event must also contain kind, occurred_at as RFC3339 UTC string, time_precision, and data object.
+Each event must also contain kind, occurred_at as RFC3339 with the user's explicit numeric offset, time_precision, and data object.
+Convert stated local wall-clock time using User timezone. Example: 15:00 in Europe/Moscow must be 2026-07-22T15:00:00+03:00 (the server converts the instant to UTC). Never attach Z to unchanged local clock digits.
 time_precision MUST be exactly one of: exact, approximate, date_only, inferred_from_message; never use unknown, estimated, null, or any other value.
 Allowed kind values only: pain_observation, medication_intake, wellbeing, activity, sleep, food_drink, measurement, note.
 

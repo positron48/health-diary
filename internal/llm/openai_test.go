@@ -46,7 +46,7 @@ func TestOpenAICompatiblePromptRequiresSequentialClientRefs(t *testing.T) {
 		}
 		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(`{"choices":[{"message":{"content":"{\"summary\":\"ok\",\"events\":[{\"client_ref\":\"e1\",\"kind\":\"note\",\"occurred_at\":\"2026-07-21T18:00:00Z\",\"time_precision\":\"exact\",\"data\":{}}]}"}}]}`)), Header: make(http.Header)}, nil
 	})}
-	result, err := NewOpenAICompatible("https://example.test", "test", "key", client).Extract(context.Background(), "entry")
+	result, err := NewOpenAICompatible("https://example.test", "test", "key", client).Extract(context.Background(), ExtractionRequest{Text: "entry", Timezone: "Europe/Moscow"})
 	if err != nil {
 		t.Fatal(err)
 	}

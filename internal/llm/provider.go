@@ -1,6 +1,9 @@
 package llm
 
-import "context"
+import (
+	"context"
+	"time"
+)
 
 type Event struct {
 	ClientRef     string         `json:"client_ref"`
@@ -13,6 +16,11 @@ type Result struct {
 	Summary string  `json:"summary"`
 	Events  []Event `json:"events"`
 }
+type ExtractionRequest struct {
+	Text      string
+	Timezone  string
+	Reference time.Time
+}
 type Extractor interface {
-	Extract(context.Context, string) (Result, error)
+	Extract(context.Context, ExtractionRequest) (Result, error)
 }

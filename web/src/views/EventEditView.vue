@@ -8,6 +8,8 @@ import { descriptorFor, entryIdOf } from '../features/events/eventRegistry'
 import SourceEntrySheet from '../features/events/SourceEntrySheet.vue'
 import StatePanel from '../components/ui/StatePanel.vue'
 import UiButton from '../components/ui/UiButton.vue'
+import { useSession } from '../composables/useSession'
+import { instantToLocalInput, localInputToUTC } from '../utils/dateTime'
 
 const id = String(useRoute().params.id)
 const event = ref<HealthEvent | null>(null)
@@ -16,6 +18,7 @@ const error = ref('')
 const saving = ref(false)
 const conflict = ref(false)
 const sourceId = ref<string | null>(null)
+const session = useSession()
 const fields = reactive<Record<string, string>>({})
 const original = reactive<Record<string, string>>({})
 const validation = reactive<Record<string, string>>({})
@@ -51,7 +54,7 @@ async function load() {
     const data = event.value.data || event.value.attributes || {}
     Object.keys(fields).forEach((key) => delete fields[key])
     Object.assign(fields, {
-      occurred_at: event.value.occurred_at.slice(0, 16),
+      occurred_at: instantToLocalInput(event.value.occurred_at, session.user.value?.timezone || 'Europe/Moscow'),
       time_precision: event.value.time_precision || 'exact',
       phase: data.phase == null ? '' : String(data.phase),
       intensity: data.intensity == null ? '' : String(data.intensity),
@@ -90,7 +93,7 @@ async function save() {
   const numericKeys = new Set(['intensity', 'functional_impact', 'dose_value', 'effect_rating'])
   for (const [key, val] of Object.entries(fields)) {
     if (val === original[key]) continue
-    if (key === 'occurred_at') patch.occurred_at = new Date(val).toISOString()
+    if (key === 'occurred_at') patch.occurred_at = localInputToUTC(val, session.user.value?.timezone || 'Europe/Moscow')
     else if (key === 'time_precision') patch.time_precision = val
     else if (['phase', 'laterality', 'name_raw', 'dose_unit'].includes(key) || numericKeys.has(key)) {
       data[key] = val === '' ? null : (numericKeys.has(key) ? Number(val) : val)

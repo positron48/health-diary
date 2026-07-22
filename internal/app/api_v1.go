@@ -7,11 +7,13 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"health-diary/internal/analytics"
 	"health-diary/internal/auth"
 	"health-diary/internal/episode"
+	"health-diary/internal/ingest"
 	"health-diary/internal/userday"
 
 	"github.com/jackc/pgx/v5"
@@ -20,6 +22,57 @@ import (
 var eventKinds = map[string]bool{
 	"pain_observation": true, "medication_intake": true, "wellbeing": true,
 	"activity": true, "sleep": true, "food_drink": true, "measurement": true, "note": true,
+}
+
+func (a *App) createEntry(w http.ResponseWriter, r *http.Request) {
+	if a.ingest == nil {
+		writeAPIError(w, r, http.StatusServiceUnavailable, "capture_unavailable", "Добавление записей временно недоступно", nil)
+		return
+	}
+	idempotencyKey := r.Header.Get("Idempotency-Key")
+	if len(idempotencyKey) < 8 || len(idempotencyKey) > 200 {
+		writeAPIError(w, r, 422, "validation_failed", "Проверьте введённые данные", map[string]string{"idempotency_key": "must contain 8 to 200 characters"})
+		return
+	}
+	var input struct {
+		Text string `json:"text"`
+		Date string `json:"date,omitempty"`
+	}
+	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 16<<10))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&input); err != nil {
+		writeAPIError(w, r, 400, "malformed_request", "Некорректный JSON", nil)
+		return
+	}
+	input.Text = strings.TrimSpace(input.Text)
+	if input.Text == "" || len([]rune(input.Text)) > 4000 {
+		writeAPIError(w, r, 422, "validation_failed", "Проверьте введённые данные", map[string]string{"text": "must contain 1 to 4000 characters"})
+		return
+	}
+	user := sessionUser(r)
+	var reference time.Time
+	if input.Date != "" {
+		loc := userLocation(user.Timezone)
+		day, err := time.ParseInLocation("2006-01-02", input.Date, loc)
+		if err != nil {
+			writeAPIError(w, r, 422, "validation_failed", "Проверьте дату", map[string]string{"date": "must be YYYY-MM-DD"})
+			return
+		}
+		now := time.Now().In(loc)
+		reference = day.Add(time.Duration(now.Hour())*time.Hour + time.Duration(now.Minute())*time.Minute + time.Duration(now.Second())*time.Second)
+	}
+	result, err := a.ingest.CaptureWebText(r.Context(), ingest.WebCapture{
+		UserID: user.ID, Text: input.Text, IdempotencyKey: idempotencyKey, SentAt: time.Now().UTC(), ReferenceAt: reference,
+	})
+	if err != nil {
+		writeAPIError(w, r, 500, "internal_error", "Не удалось сохранить запись", nil)
+		return
+	}
+	status := http.StatusCreated
+	if result.Duplicate {
+		status = http.StatusOK
+	}
+	writeJSON(w, status, map[string]any{"entry_id": result.EntryID, "status": "queued"})
 }
 
 type eventDTO struct {

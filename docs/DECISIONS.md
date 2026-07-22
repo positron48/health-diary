@@ -82,6 +82,18 @@ This is a lightweight ADR registry. Update status and rationale before changing 
 - Decision: each user may configure `settings.day_start_time` as `HH:MM`; the default is `00:00`. Calendar cells, day timelines, date-filtered reads and analytics use `[date + day_start_time, next date + day_start_time)` in the user's timezone.
 - Reason: observations recorded after midnight may still belong to the user's preceding waking day. One shared boundary keeps calendar and analytics consistent without changing stored UTC timestamps.
 
+### ADR-014: Web text uses the confirmation pipeline
+
+- Status: accepted
+- Decision: authenticated users may submit free-form diary text from the calendar or day timeline. It is stored as an encrypted `journal_entry` with `source_type='web'`, extracted by the same LLM pipeline and remains pending until explicit confirmation.
+- Reason: web capture should preserve raw-source provenance and the same correctness/privacy boundary as Telegram instead of creating trusted events directly.
+
+### ADR-015: Repair local-as-UTC event times
+
+- Status: accepted
+- Decision: extraction receives the user's IANA timezone and must convert local wall-clock input to a UTC instant before persistence. Existing semantic health timestamps are shifted by `-3 hours` once; operational, audit, authentication and source-message timestamps are not changed.
+- Reason: previous extraction could label Moscow wall-clock values with `Z`, causing the web UI to display them three hours late. The owner explicitly chose a bulk repair for existing health events.
+
 ### ADR-D01: LLM provider
 
 - Status: accepted

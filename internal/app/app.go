@@ -44,6 +44,7 @@ type App struct {
 	db              *pgxpool.Pool
 	auth            *auth.Service
 	cipher          *crypto.Cipher
+	ingest          *ingest.Service
 	telegramWebhook http.Handler
 }
 
@@ -68,22 +69,15 @@ func (a *App) Run(ctx context.Context, shutdownTimeout time.Duration) error {
 		}
 		a.cipher = cipher
 	}
-	if a.config.Telegram.Token != "" {
-		if a.config.DataEncryptionKey == "" || len(a.config.Telegram.AllowedUserIDs) == 0 {
-			return fmt.Errorf("telegram requires DATA_ENCRYPTION_KEY and TELEGRAM_ALLOWED_USER_IDS")
-		}
-		pool := a.db
-		if pool == nil {
-			return fmt.Errorf("telegram requires DATABASE_URL")
-		}
-		handler := bot.NewHandler(pool, ingest.New(pool, a.cipher, a.config.JobMaxAttempts), a.auth, a.cipher, a.config.Telegram.AllowedUserIDs, a.logger)
+	if a.db != nil && a.cipher != nil {
+		a.ingest = ingest.New(a.db, a.cipher, a.config.JobMaxAttempts)
 		var extractor llm.Extractor = llm.Fake{}
 		provider, model := "fake", "fake"
 		if a.config.LLMAPIKey != "" {
 			extractor = llm.NewOpenAICompatible(a.config.LLMBaseURL, a.config.LLMModel, a.config.LLMAPIKey, &http.Client{Timeout: 30 * time.Second})
 			provider, model = "polza", a.config.LLMModel
 		}
-		worker := jobs.NewWorker(pool, a.cipher, extractor, "app-1", provider, model)
+		worker := jobs.NewWorker(a.db, a.cipher, extractor, "app-1", provider, model)
 		go func() {
 			ticker := time.NewTicker(time.Second)
 			defer ticker.Stop()
@@ -98,6 +92,16 @@ func (a *App) Run(ctx context.Context, shutdownTimeout time.Duration) error {
 				}
 			}
 		}()
+	}
+	if a.config.Telegram.Token != "" {
+		if a.config.DataEncryptionKey == "" || len(a.config.Telegram.AllowedUserIDs) == 0 {
+			return fmt.Errorf("telegram requires DATA_ENCRYPTION_KEY and TELEGRAM_ALLOWED_USER_IDS")
+		}
+		pool := a.db
+		if pool == nil {
+			return fmt.Errorf("telegram requires DATABASE_URL")
+		}
+		handler := bot.NewHandler(pool, a.ingest, a.auth, a.cipher, a.config.Telegram.AllowedUserIDs, a.logger)
 		if a.config.Telegram.Mode == "webhook" {
 			api, err := bot.ConfigureWebhook(a.config.Telegram.Token, a.config.Telegram.WebhookURL, a.config.Telegram.WebhookSecret, a.config.Telegram.SOCKS5ProxyAddr)
 			if err != nil {
@@ -157,6 +161,7 @@ func (a *App) Handler() http.Handler {
 	mux.Handle("GET /calendar", a.requireSession(http.HandlerFunc(a.calendar)))
 	mux.Handle("GET /api/v1/calendar", a.requireSession(http.HandlerFunc(a.calendarV1)))
 	mux.Handle("GET /api/v1/days/{date}", a.requireSession(http.HandlerFunc(a.dayTimeline)))
+	mux.Handle("POST /api/v1/entries", a.requireSession(http.HandlerFunc(a.createEntry)))
 	mux.Handle("GET /analytics/summary", a.requireSession(http.HandlerFunc(a.analyticsSummary)))
 	mux.Handle("GET /api/v1/analytics/summary", a.requireSession(http.HandlerFunc(a.analyticsSummaryV1)))
 	mux.Handle("GET /api/v1/analytics/associations", a.requireSession(http.HandlerFunc(a.analyticsAssociations)))

@@ -45,7 +45,7 @@ func main() {
 		extractor := llm.NewOpenAICompatible(cfg.LLMBaseURL, model, cfg.LLMAPIKey, nil)
 		passed := 0
 		for _, f := range fixtures {
-			result, err := extractor.Extract(ctx, f.text)
+			result, err := extractor.Extract(ctx, llm.ExtractionRequest{Text: f.text, Timezone: "Europe/Moscow", Reference: time.Now()})
 			if err != nil {
 				fmt.Printf("model=%s fixture=%q error=%s\n", model, f.kinds[0], errorCategory(err))
 				continue

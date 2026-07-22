@@ -40,7 +40,7 @@ onMounted(() => load())
     <StatePanel v-else-if="!data?.batches.length" kind="empty" title="Все записи проверены" message="Новые распознанные факты появятся здесь." />
     <article v-for="batch in data?.batches" v-else :key="batch.id" class="card stack">
       <div>
-        <strong>Telegram</strong>
+        <strong>{{ batch.source_type === 'web' ? 'Веб' : 'Telegram' }}</strong>
         <p class="muted">{{ new Date(batch.message_at || batch.created_at).toLocaleString('ru-RU') }}</p>
       </div>
       <EventCard v-for="event in batch.events" :key="event.id" :event="event" />

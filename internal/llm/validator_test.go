@@ -7,6 +7,28 @@ import (
 	"time"
 )
 
+func TestNormalizeTimesRepairsLocalWallClockMarkedAsUTC(t *testing.T) {
+	reference := time.Date(2026, 7, 22, 12, 5, 0, 0, time.UTC)
+	result := Result{Events: []Event{{OccurredAt: "2026-07-22T15:00:00Z"}}}
+	if err := NormalizeTimes(&result, "Europe/Moscow", reference); err != nil {
+		t.Fatal(err)
+	}
+	if got := result.Events[0].OccurredAt; got != "2026-07-22T12:00:00Z" {
+		t.Fatalf("occurred_at = %q", got)
+	}
+}
+
+func TestNormalizeTimesUsesExplicitOffsetAsInstant(t *testing.T) {
+	reference := time.Date(2026, 7, 22, 12, 5, 0, 0, time.UTC)
+	result := Result{Events: []Event{{OccurredAt: "2026-07-22T15:00:00+03:00"}}}
+	if err := NormalizeTimes(&result, "Europe/Moscow", reference); err != nil {
+		t.Fatal(err)
+	}
+	if got := result.Events[0].OccurredAt; got != "2026-07-22T12:00:00Z" {
+		t.Fatalf("occurred_at = %q", got)
+	}
+}
+
 func TestValidateResultRejectsMalformedProviderOutput(t *testing.T) {
 	valid := Result{Summary: "x", Events: []Event{{ClientRef: "e1", Kind: "note", OccurredAt: "2026-07-21T12:00:00Z", TimePrecision: "exact", Data: map[string]any{}}}}
 	if err := ValidateResult(valid); err != nil {
@@ -54,7 +76,7 @@ func TestFakeJuly20HeadacheNarrative(t *testing.T) {
 стало чуть лучше, но до конца не прошло
 вечером после часовой прогулки боль вернулась, уже в районе затылка-шеи
 после 12 ночи выпил еще 1 цитрамон, боль успокоилась, уснул ближе к часу, на утро не болела`
-	result, err := Fake{}.Extract(context.Background(), text)
+	result, err := Fake{}.Extract(context.Background(), ExtractionRequest{Text: text, Timezone: "Europe/Moscow"})
 	if err != nil {
 		t.Fatal(err)
 	}

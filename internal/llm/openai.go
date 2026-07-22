@@ -30,10 +30,17 @@ func (p *OpenAICompatible) WithTimezone(timezone string) *OpenAICompatible {
 	return p
 }
 
-func (p *OpenAICompatible) Extract(ctx context.Context, text string) (Result, error) {
+func (p *OpenAICompatible) Extract(ctx context.Context, input ExtractionRequest) (Result, error) {
 	now := time.Now()
 	if p.now != nil {
 		now = p.now()
+	}
+	if !input.Reference.IsZero() {
+		now = input.Reference
+	}
+	timezone := input.Timezone
+	if timezone == "" {
+		timezone = p.timezone
 	}
 	body := map[string]any{
 		"model":           p.model,
@@ -41,7 +48,7 @@ func (p *OpenAICompatible) Extract(ctx context.Context, text string) (Result, er
 		"response_format": map[string]string{"type": "json_object"},
 		"messages": []map[string]string{
 			{"role": "system", "content": systemPrompt},
-			{"role": "user", "content": BuildUserPrompt(text, now, p.timezone)},
+			{"role": "user", "content": BuildUserPrompt(input.Text, now, timezone)},
 		},
 	}
 	raw, _ := json.Marshal(body)

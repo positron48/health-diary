@@ -75,6 +75,24 @@ Revokes all sessions for current user except optionally current session.
 
 ## 3. Calendar and timeline
 
+### `POST /entries`
+
+Creates an encrypted web diary entry and queues extraction:
+
+```json
+{"text":"Около 15:00 заболела голова","date":"2026-07-22"}
+```
+
+Requires an `Idempotency-Key` header. Response `201`:
+Optional `date` supplies the selected calendar day as extraction context; it
+does not fabricate a missing event time.
+
+```json
+{"entry_id":"uuid","status":"queued"}
+```
+
+The response and subsequent reads are `no-store`. Extracted events remain pending until confirmation and are excluded from calendar aggregates and analytics.
+
 ### `GET /calendar?month=2026-07&mode=overview`
 
 Modes: `overview`, `pain`, `medication`, `activity`, `sleep`, `wellbeing`.

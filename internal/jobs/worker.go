@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"time"
 
 	"health-diary/internal/auth"
 	"health-diary/internal/crypto"
@@ -37,12 +38,17 @@ func (w *Worker) RunOnce(ctx context.Context) error {
 		return w.queue.Finish(ctx, job.ID, false, "unsupported_job")
 	}
 	var payload struct {
-		EntryID string `json:"entry_id"`
+		EntryID     string     `json:"entry_id"`
+		ReferenceAt *time.Time `json:"reference_at"`
 	}
 	if err := json.Unmarshal(job.Payload, &payload); err != nil {
 		return w.queue.Finish(ctx, job.ID, false, "invalid_payload")
 	}
-	if err := w.extract(ctx, payload.EntryID, job.Attempts); err != nil {
+	var reference time.Time
+	if payload.ReferenceAt != nil {
+		reference = *payload.ReferenceAt
+	}
+	if err := w.extract(ctx, payload.EntryID, reference, job.Attempts); err != nil {
 		if finishErr := w.queue.Finish(ctx, job.ID, true, "extraction_failed"); finishErr != nil {
 			return finishErr
 		}
@@ -104,7 +110,7 @@ func (w *Worker) deleteUser(ctx context.Context, job *Job) error {
 	_, err = w.db.Exec(ctx, `UPDATE jobs SET status='succeeded',payload='{}'::jsonb,locked_at=NULL,locked_by=NULL,last_error_code=NULL,updated_at=now() WHERE id=$1 AND status='running'`, job.ID)
 	return err
 }
-func (w *Worker) extract(ctx context.Context, entryID string, attempt int) error {
+func (w *Worker) extract(ctx context.Context, entryID string, reference time.Time, attempt int) error {
 	tx, err := w.db.Begin(ctx)
 	if err != nil {
 		return err
@@ -113,16 +119,24 @@ func (w *Worker) extract(ctx context.Context, entryID string, attempt int) error
 	var userID string
 	var telegramUserID *int64
 	var sealed []byte
-	if err := tx.QueryRow(ctx, `SELECT e.user_id::text,u.telegram_user_id,e.raw_text_ciphertext FROM journal_entries e JOIN users u ON u.id=e.user_id WHERE e.id=$1 AND e.deleted_at IS NULL FOR UPDATE`, entryID).Scan(&userID, &telegramUserID, &sealed); err != nil {
+	var timezone string
+	var sourceSentAt time.Time
+	if err := tx.QueryRow(ctx, `SELECT e.user_id::text,u.telegram_user_id,u.timezone,e.source_sent_at,e.raw_text_ciphertext FROM journal_entries e JOIN users u ON u.id=e.user_id WHERE e.id=$1 AND e.deleted_at IS NULL FOR UPDATE`, entryID).Scan(&userID, &telegramUserID, &timezone, &sourceSentAt, &sealed); err != nil {
 		return err
+	}
+	if reference.IsZero() {
+		reference = sourceSentAt
 	}
 	plain, err := w.cipher.Decrypt(sealed, []byte(userID))
 	if err != nil {
 		return err
 	}
-	result, err := w.extractor.Extract(ctx, string(plain))
+	result, err := w.extractor.Extract(ctx, llm.ExtractionRequest{Text: string(plain), Timezone: timezone, Reference: reference})
 	if err != nil {
 		return err
+	}
+	if err := llm.NormalizeTimes(&result, timezone, reference); err != nil {
+		return fmt.Errorf("normalize extraction times: %w", err)
 	}
 	if err := llm.ValidateResult(result); err != nil {
 		return fmt.Errorf("validate extraction result: %w", err)
@@ -159,7 +173,7 @@ func (w *Worker) extract(ctx context.Context, entryID string, attempt int) error
 		if _, err = tx.Exec(ctx, `INSERT INTO telegram_callback_actions(token_hash,user_id,batch_id,batch_version,action,expires_at) VALUES($1,$2,$3,1,'confirm',now()+interval '7 days'),($4,$2,$3,1,'reject',now()+interval '7 days')`, confirmHash, userID, batchID, rejectHash); err != nil {
 			return err
 		}
-		payload := map[string]any{"chat_id": *telegramUserID, "text": confirmationText(result.Events), "confirm_token": confirmToken, "reject_token": rejectToken}
+		payload := map[string]any{"chat_id": *telegramUserID, "text": confirmationText(result.Events, timezone), "confirm_token": confirmToken, "reject_token": rejectToken}
 		if _, err = tx.Exec(ctx, `INSERT INTO outbox_messages(user_id,kind,payload) VALUES($1,'telegram_confirmation',$2)`, userID, payload); err != nil {
 			return err
 		}

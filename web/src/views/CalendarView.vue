@@ -3,11 +3,13 @@ import { computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Activity, Bed, ChevronLeft, ChevronRight, HeartPulse, Pill, Smile } from '@lucide/vue'
 import { calendarApi, type CalendarMode } from '../api/calendar'
+import { journalApi } from '../api/journal'
 import type { CalendarDay } from '../api/types'
 import { useAsyncState } from '../composables/useAsyncState'
 import { useSession } from '../composables/useSession'
 import { userDate } from '../utils/userDay'
 import StatePanel from '../components/ui/StatePanel.vue'
+import EventCard from '../features/events/EventCard.vue'
 
 const route = useRoute(), router = useRouter(), session = useSession()
 const currentDate = session.user.value?.current_local_date || userDate(new Date(), session.user.value?.timezone || 'Europe/Moscow', session.user.value?.settings?.day_start_time)
@@ -17,6 +19,7 @@ const month = computed(() => String(route.params.month || fallbackMonth))
 const mode = computed(() => (route.query.mode || 'overview') as CalendarMode)
 const selected = computed(() => String(route.query.day || ''))
 const { data, loading, error, load } = useAsyncState(() => calendarApi.month(month.value, mode.value))
+const preview = useAsyncState(() => journalApi.dayPreview(selected.value))
 
 const cells = computed(() => {
   const [year, m] = month.value.split('-').map(Number)
@@ -76,7 +79,9 @@ function goToday() {
 }
 
 watch([month, mode], () => load())
+watch(selected, (date) => { if (date) preview.load() })
 onMounted(() => load())
+onMounted(() => { if (selected.value) preview.load() })
 </script>
 <template>
   <div class="page calendar-page">
@@ -121,8 +126,16 @@ onMounted(() => load())
     </div>
     <aside v-if="selected" class="day-pane card">
       <h2>{{ new Date(`${selected}T12:00:00`).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' }) }}</h2>
-      <p>Выбранный день сохранён в адресе.</p>
-      <RouterLink :to="`/day/${selected}`">Открыть хронологию</RouterLink>
+      <StatePanel v-if="preview.loading.value" kind="loading" />
+      <StatePanel v-else-if="preview.error.value" kind="error" :message="preview.error.value" @retry="preview.load()" />
+      <StatePanel v-else-if="!preview.data.value?.events.length" kind="empty" title="За этот день нет записей" />
+      <div v-else class="preview-events">
+        <EventCard v-for="event in preview.data.value?.events" :key="event.id" :event="event" />
+      </div>
+      <div class="cluster preview-actions">
+        <RouterLink class="button" :to="`/entries/new?date=${selected}`">Добавить запись</RouterLink>
+        <RouterLink :to="`/day/${selected}`">Открыть полную хронологию</RouterLink>
+      </div>
     </aside>
   </div>
 </template>
@@ -156,10 +169,13 @@ onMounted(() => load())
 .day-cell small { color: var(--muted); overflow-wrap: anywhere; font-size: .65rem; }
 .pending-dot { position: absolute; top: 8px; right: 8px; width: 8px; height: 8px; border-radius: 50%; background: var(--danger); }
 .day-pane { grid-column: 2; grid-row: 1 / 5; }
+.preview-events { display: grid; gap: var(--s3); }
+.preview-actions { margin-top: var(--s4); }
+.preview-actions .button { text-decoration: none; }
 @media (max-width: 900px) {
   .calendar-page { display: block; }
   .calendar-page > * { margin-bottom: var(--s4); }
-  .day-pane { display: none; }
+  .day-pane { display: block; }
 }
 @media (max-width: 520px) {
   .calendar-header { display: grid; }

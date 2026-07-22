@@ -179,8 +179,8 @@ export function eventFields(event: HealthEvent) {
     .map((field) => ({ label: field.label, value: field.format?.(data[field.key], data) ?? value(data[field.key]) }))
 }
 
-export const eventTime = (event: HealthEvent) =>
-  `${new Intl.DateTimeFormat('ru-RU', { hour: '2-digit', minute: '2-digit' }).format(new Date(event.occurred_at))}${
+export const eventTime = (event: HealthEvent, timeZone?: string) =>
+  `${new Intl.DateTimeFormat('ru-RU', { hour: '2-digit', minute: '2-digit', timeZone }).format(new Date(event.occurred_at))}${
     event.time_precision === 'approximate' || event.time_precision === 'inferred_from_message'
       ? ' · примерно'
       : event.time_precision === 'unknown' || event.time_precision === 'date_only'

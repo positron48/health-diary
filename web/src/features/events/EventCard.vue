@@ -2,7 +2,10 @@
 import { computed } from 'vue'
 import type { HealthEvent } from '../../api/types'
 import { descriptorFor, entryIdOf, eventFields, eventTime } from './eventRegistry'
+import { useSession } from '../../composables/useSession'
 const props = defineProps<{ event: HealthEvent; actions?: boolean }>()
+const session = useSession()
+const timezone = computed(() => session.user.value?.timezone)
 const emit = defineEmits<{ delete: [event: HealthEvent]; source: [entryId: string] }>()
 const data = computed(() => props.event.data || props.event.attributes || {})
 const descriptor = computed(() => descriptorFor(props.event.kind, data.value))
@@ -14,7 +17,7 @@ const sourceId = computed(() => entryIdOf(props.event))
     <div class="event-card__body">
       <div class="event-card__title">
         <strong>{{ descriptor.label }}</strong>
-        <time :datetime="event.occurred_at">{{ eventTime(event) }}</time>
+        <time :datetime="event.occurred_at">{{ eventTime(event, timezone) }}</time>
       </div>
       <dl v-if="eventFields(event).length">
         <template v-for="field in eventFields(event)" :key="field.label">

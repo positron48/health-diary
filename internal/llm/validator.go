@@ -56,6 +56,34 @@ func ValidateResult(result Result) error {
 	return nil
 }
 
+// NormalizeTimes converts provider timestamps to UTC. A trailing Z is treated
+// as a provider mistake containing user-local wall-clock digits; the prompt
+// requires an explicit numeric offset for correctly resolved local input.
+func NormalizeTimes(result *Result, timezone string, reference time.Time) error {
+	loc, err := time.LoadLocation(timezone)
+	if err != nil {
+		return fmt.Errorf("invalid user timezone")
+	}
+	for index := range result.Events {
+		raw := result.Events[index].OccurredAt
+		parsed, err := time.Parse(time.RFC3339, raw)
+		if err != nil {
+			return fmt.Errorf("event %d has invalid occurred_at", index)
+		}
+		if strings.HasSuffix(strings.ToUpper(raw), "Z") && loc != time.UTC {
+			parsed = time.Date(parsed.Year(), parsed.Month(), parsed.Day(), parsed.Hour(), parsed.Minute(), parsed.Second(), parsed.Nanosecond(), loc)
+		}
+		if !reference.IsZero() {
+			delta := parsed.Sub(reference)
+			if delta < -5*365*24*time.Hour || delta > 30*24*time.Hour {
+				return fmt.Errorf("event %d occurred_at is outside the allowed window", index)
+			}
+		}
+		result.Events[index].OccurredAt = parsed.UTC().Format(time.RFC3339)
+	}
+	return nil
+}
+
 func validateEventData(kind string, data map[string]any) error {
 	switch kind {
 	case "pain_observation":

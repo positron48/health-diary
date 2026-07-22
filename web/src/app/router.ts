@@ -12,6 +12,7 @@ export const router = createRouter({
       { path: 'pending', component: view('PendingView'), meta: { title: 'Входящие' } },
       { path: 'calendar/:month?', component: view('CalendarView'), meta: { title: 'Календарь' } },
       { path: 'day/:date', component: view('DayView'), meta: { title: 'День' } },
+      { path: 'entries/new', component: view('EntryCreateView'), meta: { title: 'Новая запись' } },
       { path: 'events/:id/edit', component: view('EventEditView'), meta: { title: 'Изменение события' } },
       { path: 'episodes/:id', component: view('EpisodeView'), meta: { title: 'Эпизод' } },
       { path: 'analytics', component: view('AnalyticsView'), meta: { title: 'Аналитика' } },
