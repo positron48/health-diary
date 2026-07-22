@@ -1,6 +1,8 @@
 # Product specification
 
-Status: approved direction, implementation not started.
+Status: approved direction; MVP backend contour and a minimal web review shell
+are implemented, while the target frontend redesign is specified in
+`FRONTEND.md`.
 
 Audience: product owner, backend/frontend engineers, QA.
 

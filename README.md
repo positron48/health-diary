@@ -21,6 +21,7 @@ production rollout ещё нужны infrastructure gates из `docs/DECISIONS.m
 - [Bot and LLM](docs/BOT_AND_LLM.md) — UX бота, JSON Schema, подтверждения и исправления.
 - [API](docs/API.md) — HTTP-контракты, авторизация, ответы и ошибки.
 - [Analytics](docs/ANALYTICS.md) — метрики, правила поиска ассоциаций и ограничения интерпретации.
+- [Frontend and UX](docs/FRONTEND.md) — экраны, навигация, визуальная система, структура Vue-кода и порядок редизайна.
 - [Security and privacy](docs/SECURITY.md) — чувствительные данные, Telegram/LLM boundaries и threat model.
 - [Operations](docs/OPERATIONS.md) — local dev, env, GitLab CI, Flux, k3s, backup и monitoring.
 - [Testing](docs/TESTING.md) — тестовая стратегия и обязательные проверки.

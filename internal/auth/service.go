@@ -3,10 +3,17 @@ package auth
 import (
 	"context"
 	"crypto/subtle"
+	"errors"
 	"fmt"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+)
+
+var (
+	ErrChallengeExpired = errors.New("challenge expired")
+	ErrChallengeLocked  = errors.New("challenge locked")
+	ErrInvalidCode      = errors.New("invalid code")
 )
 
 type Service struct {
@@ -84,8 +91,11 @@ func (s *Service) Verify(ctx context.Context, challengeID, code string) (string,
 	if err != nil {
 		return "", "", err
 	}
-	if used != nil || locked != nil || time.Now().After(expires) || len(hash) == 0 {
-		return "", "", fmt.Errorf("challenge unavailable")
+	if locked != nil {
+		return "", "", ErrChallengeLocked
+	}
+	if used != nil || time.Now().After(expires) || len(hash) == 0 {
+		return "", "", ErrChallengeExpired
 	}
 	if subtle.ConstantTimeCompare(hash, Hash(code)) != 1 {
 		attempts++
@@ -96,7 +106,10 @@ func (s *Service) Verify(ctx context.Context, challengeID, code string) (string,
 		if err = tx.Commit(ctx); err != nil {
 			return "", "", err
 		}
-		return "", "", fmt.Errorf("invalid code")
+		if attempts >= max {
+			return "", "", ErrChallengeLocked
+		}
+		return "", "", ErrInvalidCode
 	}
 	token, tokenHash, err := NewOpaqueToken()
 	if err != nil {

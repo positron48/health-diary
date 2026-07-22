@@ -113,6 +113,10 @@ Returns decrypted source only for its owner, with `Cache-Control: no-store`. Acc
 
 Filters: `from`, `to`, repeated `kind`, `status`, `cursor`, `limit<=100`.
 
+This endpoint returns only current confirmed, non-deleted events. `status` is
+accepted only as `confirmed`; pending candidates are available through
+`GET /batches?status=pending`.
+
 ### `GET /events/{id}`
 
 Returns common envelope, typed data, provenance metadata and current revision.
@@ -142,7 +146,9 @@ Restores within configurable undo window if related episode remains consistent.
 
 ### `GET /batches?status=pending`
 
-Pending confirmation inbox.
+Pending confirmation inbox. Each batch includes source-entry ID, source type,
+message timestamp, batch version and candidate event time precision. Source
+text is deliberately absent.
 
 ### `POST /batches/{id}/confirm`
 
@@ -198,17 +204,12 @@ Returns intake days, linked episodes and recorded response. It does not make tre
 
 Editable: timezone, locale, reminder preferences, raw retention preference and optional tracking fields.
 
-### `POST /exports`
+### `GET /exports?format=json|csv` (MVP)
 
-Body: `format` (`json`, `csv` initially), date range and included categories. Creates background export.
-
-### `GET /exports/{id}`
-
-Status and short-lived authenticated download link. Files expire automatically.
-
-### `DELETE /exports/{id}`
-
-Deletes artifact.
+Returns a synchronous authenticated download of current confirmed,
+non-deleted events. The response is `Cache-Control: no-store`. This is the
+single explicit MVP export contract; the asynchronous lifecycle is deferred
+until export size or report generation requires stored artifacts.
 
 ### `POST /me/deletion-request`
 
@@ -245,3 +246,10 @@ Requires re-authentication/code confirmation and returns a deletion job status. 
 | 503 | temporary dependency unavailable |
 
 Cross-user resource access returns `404`, not `403`.
+
+## 12. Compatibility
+
+`/api/v1` is the canonical public prefix. Existing root routes remain as
+temporary compatibility aliases for the initial web shell. New clients must
+use `/api/v1`; aliases may be removed only after the shell migration is
+complete.

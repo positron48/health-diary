@@ -12,7 +12,7 @@
 2. `docs/DECISIONS.md`
 3. `docs/PRODUCT.md`
 4. `docs/ARCHITECTURE.md`
-5. документ конкретной подсистемы
+5. документ конкретной подсистемы; для web UI — `docs/FRONTEND.md`
 6. `docs/IMPLEMENTATION_PLAN.md`
 
 Если реализация меняет архитектурное решение, API, схему, env, deploy или privacy boundary, сначала обновить соответствующий документ и `docs/DECISIONS.md`.

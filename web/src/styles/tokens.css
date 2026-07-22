@@ -1,0 +1,8 @@
+:root {
+  --bg:#f5f7f4;--surface:#fff;--text:#17211b;--muted:#5f6d64;--primary:#246b45;--primary-hover:#1b5737;
+  --border:#dce5de;--danger:#8c2929;--danger-bg:#fff0ef;--success:#287044;--pain:#bd4b48;--medication:#a86508;
+  --sleep:#5456a9;--activity:#16717a;--wellbeing:#7852a3;--focus:#1769aa;
+  --s1:4px;--s2:8px;--s3:12px;--s4:16px;--s5:24px;--s6:32px;--s7:48px;
+  --radius-card:16px;--radius-control:11px;--shadow:0 8px 30px rgb(23 33 27 / 8%);
+  --sidebar:232px;--content:1120px;
+}

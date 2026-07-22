@@ -41,3 +41,15 @@ func TestReadyzWithoutDatabaseIsUnavailable(t *testing.T) {
 		t.Fatalf("status=%d, want %d", response.Code, http.StatusServiceUnavailable)
 	}
 }
+
+func TestSPARouteFallsBackToIndex(t *testing.T) {
+	request := httptest.NewRequest(http.MethodGet, "/calendar/2026-07", nil)
+	response := httptest.NewRecorder()
+	New(config.Config{}, nil).Handler().ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("status=%d, want %d", response.Code, http.StatusOK)
+	}
+	if contentType := response.Header().Get("Content-Type"); contentType != "text/html; charset=utf-8" {
+		t.Fatalf("content type=%q", contentType)
+	}
+}

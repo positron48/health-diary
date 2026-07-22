@@ -64,6 +64,18 @@ This is a lightweight ADR registry. Update status and rationale before changing 
 - Decision: extracted events are pending until user confirmation; only confirmed events affect analytics.
 - Reason: LLM extraction can be wrong and health statistics must be correctable.
 
+### ADR-011: Versioned API with compatibility aliases
+
+- Status: accepted
+- Decision: `/api/v1` is canonical. Existing root handlers remain temporary aliases while the original web shell is migrated.
+- Reason: stable frontend contracts without breaking the already runnable vertical slice.
+
+### ADR-012: Synchronous MVP export
+
+- Status: accepted
+- Decision: MVP export is an authenticated, no-store `GET /api/v1/exports?format=json|csv`; asynchronous export artifacts remain deferred.
+- Reason: current personal-user volume does not justify stored export artifacts, cleanup jobs or download tokens. The contract is explicit and can evolve as a new version when measured size requires it.
+
 ### ADR-D01: LLM provider
 
 - Status: accepted

@@ -294,6 +294,11 @@ Estimate: 1–1.5 days.
 
 Goal: usable mobile-first review interface.
 
+Detailed screen behavior, responsive layout, visual tokens, Vue ownership and
+frontend delivery order are defined in `FRONTEND.md`. That document is the
+frontend source of truth; this phase keeps the cross-project dependencies and
+Definition of Done.
+
 Create views/components approximately:
 
 ```text

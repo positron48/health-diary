@@ -17,6 +17,9 @@ test:
 
 web-build:
 	npm --prefix web ci
+	npm --prefix web run typecheck
+	npm --prefix web run lint
+	npm --prefix web run test
 	npm --prefix web run build
 
 check:
@@ -24,6 +27,9 @@ check:
 	go vet ./...
 	go test ./...
 	npm --prefix web ci
+	npm --prefix web run typecheck
+	npm --prefix web run lint
+	npm --prefix web run test
 	npm --prefix web run build
 	git diff --check
 
