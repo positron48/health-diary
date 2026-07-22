@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "health-entry-v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["summary", "events"],
+  "properties": {
+    "schema_version": { "type": "string" },
+    "summary": { "type": "string", "maxLength": 500 },
+    "events": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 12,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["client_ref", "kind", "occurred_at", "time_precision", "data"],
+        "properties": {
+          "client_ref": { "type": "string", "minLength": 1, "maxLength": 64 },
+          "kind": {
+            "type": "string",
+            "enum": ["pain_observation", "medication_intake", "wellbeing", "activity", "sleep", "food_drink", "measurement", "note"]
+          },
+          "occurred_at": { "type": "string", "format": "date-time" },
+          "time_precision": {
+            "type": "string",
+            "enum": ["exact", "approximate", "date_only", "inferred_from_message"]
+          },
+          "confidence": { "type": ["number", "null"], "minimum": 0, "maximum": 1 },
+          "data": { "type": "object" },
+          "links": { "type": "object" },
+          "source_spans": { "type": "array", "items": { "type": "string" } }
+        }
+      }
+    },
+    "clarifications": { "type": "array" }
+  }
+}

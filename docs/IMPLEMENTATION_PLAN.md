@@ -1,10 +1,13 @@
 # Implementation plan
 
 Status: Phases 0–3 have implemented vertical slices; Phase 5 has implemented
-Telegram-code session basics; Phase 6 has a minimal responsive review UI;
-Phase 7 has conservative confirmed-event summary/export. The remaining detailed
-items in these phases and all production external gates remain open until their
-tests and operational verification are completed.
+Telegram-code session basics; Phase 6 has a responsive review UI shell;
+Phase 7 has conservative confirmed-event summary/export. Event detailing work
+tightens LLM extraction (phase-aware headache + medication names), Telegram
+confirmation copy, episode/medication projection after confirm, source
+disclosure and typed edit/calendar presentation. The remaining detailed items
+in these phases and all production external gates remain open until their tests
+and operational verification are completed.
 
 Scope: first production-capable MVP described in `PRODUCT.md`.
 

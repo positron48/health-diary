@@ -119,7 +119,28 @@ accepted only as `confirmed`; pending candidates are available through
 
 ### `GET /events/{id}`
 
-Returns common envelope, typed data, provenance metadata and current revision.
+Returns common envelope, typed data, provenance metadata and current revision:
+
+```json
+{
+  "id": "uuid",
+  "entry_id": "uuid",
+  "episode_id": "uuid-or-null",
+  "kind": "pain_observation",
+  "occurred_at": "2026-07-21T12:00:00Z",
+  "ended_at": null,
+  "time_precision": "approximate",
+  "data": {
+    "symptom_type": "headache",
+    "phase": "update",
+    "intensity": 5,
+    "locations": ["occiput_neck"]
+  },
+  "revision": 2
+}
+```
+
+`entry_id` is always present for source disclosure. `episode_id` is present when the event is linked through `pain_observations` or `medication_intakes`.
 
 ### `PATCH /events/{id}`
 
@@ -132,7 +153,7 @@ Returns common envelope, typed data, provenance metadata and current revision.
 }
 ```
 
-Only supplied fields change. Same domain validation as LLM output. Response `409 revision_conflict` for stale edit.
+Only supplied top-level fields change. Nested `data` is merged into existing attributes: omitted keys are preserved, explicit `null` clears a field. Same domain validation as LLM output. Response `409 revision_conflict` for stale edit. After a successful pain or medication edit the episode projection is recalculated.
 
 ### `DELETE /events/{id}`
 

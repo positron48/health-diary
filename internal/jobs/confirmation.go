@@ -34,17 +34,31 @@ func eventDescription(event llm.Event) string {
 		title = "Головная боль"
 	}
 	parts := []string{}
+	if event.Kind == "pain_observation" {
+		switch stringValue(data["phase"]) {
+		case "start":
+			parts = append(parts, "началась")
+		case "update":
+			parts = append(parts, "наблюдение")
+		case "end":
+			parts = append(parts, "прошла")
+		}
+		if intensity := stringValue(data["intensity"]); intensity != "" {
+			parts = append(parts, intensity+"/10")
+		}
+		if locs := locationLabels(data["locations"]); locs != "" {
+			parts = append(parts, locs)
+		}
+		if laterality := lateralityLabel(stringValue(data["laterality"])); laterality != "" {
+			parts = append(parts, laterality)
+		}
+	}
 	if event.Kind == "medication_intake" {
-		if name := firstNonEmpty(stringValue(data["name_raw"]), stringValue(data["normalized_name"])); name != "" {
+		if name := firstNonEmpty(stringValue(data["name_raw"]), stringValue(data["normalized_name"]), stringValue(data["name"])); name != "" {
 			parts = append(parts, name)
 		}
 		if dose := stringValue(data["dose_value"]); dose != "" {
 			parts = append(parts, strings.TrimSpace(dose+" "+stringValue(data["dose_unit"])))
-		}
-	}
-	if event.Kind == "pain_observation" {
-		if intensity := stringValue(data["intensity"]); intensity != "" {
-			parts = append(parts, intensity+"/10")
 		}
 	}
 	if event.OccurredAt != "" {
@@ -60,6 +74,61 @@ func eventDescription(event llm.Event) string {
 		return title
 	}
 	return title + " — " + strings.Join(parts, ", ")
+}
+
+func locationLabels(value any) string {
+	items := []string{}
+	switch typed := value.(type) {
+	case []string:
+		items = typed
+	case []any:
+		for _, item := range typed {
+			if text, ok := item.(string); ok {
+				items = append(items, text)
+			}
+		}
+	}
+	labels := make([]string, 0, len(items))
+	for _, item := range items {
+		labels = append(labels, locationLabel(item))
+	}
+	return strings.Join(labels, ", ")
+}
+
+func locationLabel(value string) string {
+	switch value {
+	case "top_of_head", "upper_head", "head_top":
+		return "верхняя часть головы"
+	case "occiput_neck", "occiput", "neck":
+		return "затылок/шея"
+	case "temple", "temporal":
+		return "висок"
+	case "forehead", "frontal":
+		return "лоб"
+	case "right_side":
+		return "правая сторона"
+	case "left_side":
+		return "левая сторона"
+	case "head":
+		return "голова"
+	default:
+		return value
+	}
+}
+
+func lateralityLabel(value string) string {
+	switch value {
+	case "left":
+		return "слева"
+	case "right":
+		return "справа"
+	case "bilateral":
+		return "с обеих сторон"
+	case "center":
+		return "по центру"
+	default:
+		return ""
+	}
 }
 
 func stringValue(value any) string {

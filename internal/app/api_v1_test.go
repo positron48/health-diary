@@ -37,6 +37,23 @@ func TestValidateEventPreservesNullableValuesAndChecksRanges(t *testing.T) {
 	}
 }
 
+func TestMergeEventDataPreservesUnchangedAttributes(t *testing.T) {
+	merged, err := mergeEventData(json.RawMessage(`{"symptom_type":"headache","phase":"start","locations":["top_of_head"]}`), json.RawMessage(`{"intensity":5,"locations":null}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var data map[string]any
+	if err := json.Unmarshal(merged, &data); err != nil {
+		t.Fatal(err)
+	}
+	if data["symptom_type"] != "headache" || data["phase"] != "start" || data["intensity"] != float64(5) {
+		t.Fatalf("unexpected merge: %#v", data)
+	}
+	if _, ok := data["locations"]; ok {
+		t.Fatalf("null patch should clear locations: %#v", data)
+	}
+}
+
 func TestCalendarDayAggregatesDeterministically(t *testing.T) {
 	day := calendarDay{Date: "2026-07-22", HasData: true}
 	day.add("pain_observation", json.RawMessage(`{"intensity":4}`))

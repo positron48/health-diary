@@ -7,6 +7,8 @@ import (
 	"strings"
 
 	"health-diary/internal/auth"
+	"health-diary/internal/crypto"
+	"health-diary/internal/episode"
 	"health-diary/internal/ingest"
 	"health-diary/internal/journal"
 
@@ -17,13 +19,14 @@ import (
 type Handler struct {
 	ingest  *ingest.Service
 	auth    *auth.Service
+	cipher  *crypto.Cipher
 	allowed map[int64]struct{}
 	log     *slog.Logger
 	db      *pgxpool.Pool
 }
 
-func NewHandler(db *pgxpool.Pool, ingest *ingest.Service, authService *auth.Service, allowed map[int64]struct{}, log *slog.Logger) *Handler {
-	return &Handler{db: db, ingest: ingest, auth: authService, allowed: allowed, log: log}
+func NewHandler(db *pgxpool.Pool, ingest *ingest.Service, authService *auth.Service, cipher *crypto.Cipher, allowed map[int64]struct{}, log *slog.Logger) *Handler {
+	return &Handler{db: db, ingest: ingest, auth: authService, cipher: cipher, allowed: allowed, log: log}
 }
 
 func (h *Handler) Handle(ctx context.Context, bot *tgbotapi.BotAPI, update tgbotapi.Update) error {
@@ -77,13 +80,17 @@ func (h *Handler) callback(ctx context.Context, api *tgbotapi.BotAPI, callback *
 		}
 		return nil
 	}
-	err := journal.ApplyTelegramAction(ctx, h.db, int64(callback.From.ID), parts[1], parts[2])
+	userID, err := journal.ApplyTelegramAction(ctx, h.db, int64(callback.From.ID), parts[1], parts[2])
 	message := "Готово: события подтверждены."
 	if parts[2] == "reject" {
 		message = "Черновик отклонён."
 	}
 	if err != nil {
 		message = "Это действие уже выполнено или ссылка устарела."
+	} else if parts[2] == "confirm" && userID != "" {
+		if syncErr := episode.SyncConfirmed(ctx, h.db, h.cipher, userID); syncErr != nil && h.log != nil {
+			h.log.Error("episode projection after telegram confirm failed", "error", syncErr)
+		}
 	}
 	_, requestErr := api.Request(tgbotapi.NewCallback(callback.ID, message))
 	if requestErr != nil {

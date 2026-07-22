@@ -6,7 +6,7 @@ import EventCard from '../features/events/EventCard.vue'
 import StatePanel from '../components/ui/StatePanel.vue'
 const today = new Date().toISOString().slice(0, 10)
 const { data, loading, error, load } = useAsyncState(async () => {
-  try { return await journalApi.day(today) } catch { const list = await journalApi.events(`?from=${today}T00:00:00&to=${today}T23:59:59`); return { date: today, events: list.events, pending_count: 0 } }
+  try { return await journalApi.day(today) } catch { const list = await journalApi.events(`?from=${today}&to=${today}`); return { date: today, events: list.events, pending_count: 0 } }
 })
 const openEpisode = computed(() => data.value?.episodes?.find((episode) => episode.status === 'open'))
 onMounted(() => load())

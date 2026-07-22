@@ -49,21 +49,18 @@ the encrypted entry is retained; it never exposes provider errors or entry text.
 Example:
 
 ```text
-Записал 2 события:
-
-🟠 Головная боль — начало около 15:00
-справа, 6/10
-
-💊 Ибупрофен — 400 мг около 15:00
-
-Время указано приблизительно.
+Распознано:
+• Головная боль — началась около 15:00, справа, 6/10
+• Приём лекарства — ибупрофен, 400 мг, около 15:00
+Подтвердите весь список, только если всё верно.
 ```
 
-Buttons:
+Current MVP buttons:
 
-- `Верно`
-- `Исправить`
-- `Удалить`
+- `Подтвердить всё`
+- `Отклонить всё`
+
+Natural-language correction and web field editing remain available for precise fixes. Future bot buttons `Исправить` / `Удалить` may return once correction callbacks are implemented.
 
 Callback data contains a short opaque token mapped server-side to `(batch_id, version, action)`. Do not expose UUIDs or sign sensitive data into callback payloads.
 
@@ -103,8 +100,9 @@ Conceptual JSON result:
       },
       "data": {
         "symptom_type": "headache",
+        "phase": "start",
         "intensity": 6,
-        "locations": ["head"],
+        "locations": ["right_side"],
         "laterality": "right",
         "qualities": [],
         "associated_symptoms": [],
@@ -134,14 +132,30 @@ Conceptual JSON result:
 }
 ```
 
-The final JSON Schema must set `additionalProperties: false` recursively and enumerate kinds/units/actions.
+Headache episode rules for `pain_observation`:
+
+- `phase` is `start`, `update` or `end`.
+- Onset (“началась”, “заболела”) → `start`.
+- Change without closure (“сильнее”, “вернулась”, “чуть лучше”) → `update`.
+- Explicit end or morning “не болела / прошла” after overnight episode → `end` at the relief time when stated, otherwise at last observation; never invent a separate positive pain event from negation.
+- Missing intensity/dose/time stays `null`; do not invent a 0–10 score.
+
+Medication rules:
+
+- Keep the stated brand/common name in `name_raw` (e.g. `цитрамон`).
+- `normalized_name` is optional and must not invent a drug class diagnosis.
+- One intake statement may produce one `medication_intake`; quantity “1 цитрамон” without milligrams leaves `dose_value` null.
+
+The final JSON Schema must set `additionalProperties: false` recursively and enumerate kinds/units/actions/phases.
 
 ## 7. Prompt rules
 
 The prompt must explicitly require:
 
-- Extract only facts stated or unambiguously relative to supplied current time.
+- Extract only facts stated or unambiguously relative to supplied current time and timezone.
 - Use `null` for missing dose, time, intensity, duration and effect.
+- Do not invent intensity from qualitative words alone (“слегка”, “сильнее”) unless a numeric score is stated.
+- Do not create a pain event from a negation such as “на утро не болела”; that closes or ends the prior episode.
 - Do not infer a diagnosis, trigger, medication class or causal relationship from symptoms.
 - Preserve approximate time precision.
 - A statement can produce multiple events.

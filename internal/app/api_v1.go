@@ -11,6 +11,7 @@ import (
 
 	"health-diary/internal/analytics"
 	"health-diary/internal/auth"
+	"health-diary/internal/episode"
 
 	"github.com/jackc/pgx/v5"
 )
@@ -23,6 +24,7 @@ var eventKinds = map[string]bool{
 type eventDTO struct {
 	ID            string          `json:"id"`
 	EntryID       string          `json:"entry_id"`
+	EpisodeID     *string         `json:"episode_id"`
 	Kind          string          `json:"kind"`
 	OccurredAt    time.Time       `json:"occurred_at"`
 	EndedAt       *time.Time      `json:"ended_at"`
@@ -56,12 +58,15 @@ func (a *App) eventsV1(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, r, 422, "validation_failed", "Проверьте параметры", fields)
 		return
 	}
-	rows, err := a.db.Query(r.Context(), `SELECT id::text,entry_id::text,kind,occurred_at,ended_at,time_precision,attributes,revision
-		FROM health_events WHERE user_id=$1 AND status='confirmed' AND deleted_at IS NULL
-		AND ($2::timestamptz IS NULL OR occurred_at >= $2) AND ($3::timestamptz IS NULL OR occurred_at < $3)
-		AND (cardinality($4::text[])=0 OR kind=ANY($4)) AND ($5='' OR (occurred_at,id) < (
+	rows, err := a.db.Query(r.Context(), `SELECT e.id::text,e.entry_id::text,COALESCE(p.episode_id,m.episode_id)::text,e.kind,e.occurred_at,e.ended_at,e.time_precision,e.attributes,e.revision
+		FROM health_events e
+		LEFT JOIN pain_observations p ON p.event_id=e.id
+		LEFT JOIN medication_intakes m ON m.event_id=e.id
+		WHERE e.user_id=$1 AND e.status='confirmed' AND e.deleted_at IS NULL
+		AND ($2::timestamptz IS NULL OR e.occurred_at >= $2) AND ($3::timestamptz IS NULL OR e.occurred_at < $3)
+		AND (cardinality($4::text[])=0 OR e.kind=ANY($4)) AND ($5='' OR (e.occurred_at,e.id) < (
 			SELECT occurred_at,id FROM health_events WHERE id=NULLIF($5,'')::uuid AND user_id=$1))
-		ORDER BY occurred_at DESC,id DESC LIMIT $6`, user.ID, from, to, kinds, q.Get("cursor"), limit+1)
+		ORDER BY e.occurred_at DESC,e.id DESC LIMIT $6`, user.ID, from, to, kinds, q.Get("cursor"), limit+1)
 	if err != nil {
 		writeAPIError(w, r, 500, "internal_error", "Не удалось загрузить события", nil)
 		return
@@ -70,10 +75,12 @@ func (a *App) eventsV1(w http.ResponseWriter, r *http.Request) {
 	items := []eventDTO{}
 	for rows.Next() {
 		var item eventDTO
-		if err := rows.Scan(&item.ID, &item.EntryID, &item.Kind, &item.OccurredAt, &item.EndedAt, &item.TimePrecision, &item.Data, &item.Revision); err != nil {
+		var episodeID *string
+		if err := rows.Scan(&item.ID, &item.EntryID, &episodeID, &item.Kind, &item.OccurredAt, &item.EndedAt, &item.TimePrecision, &item.Data, &item.Revision); err != nil {
 			writeAPIError(w, r, 500, "internal_error", "Не удалось загрузить события", nil)
 			return
 		}
+		item.EpisodeID = episodeID
 		items = append(items, item)
 	}
 	var cursor string
@@ -87,9 +94,12 @@ func (a *App) eventsV1(w http.ResponseWriter, r *http.Request) {
 func (a *App) eventDetail(w http.ResponseWriter, r *http.Request) {
 	user := sessionUser(r)
 	var item eventDTO
-	err := a.db.QueryRow(r.Context(), `SELECT id::text,entry_id::text,kind,occurred_at,ended_at,time_precision,attributes,revision
-		FROM health_events WHERE id=$1 AND user_id=$2 AND status='confirmed' AND deleted_at IS NULL`,
-		r.PathValue("id"), user.ID).Scan(&item.ID, &item.EntryID, &item.Kind, &item.OccurredAt, &item.EndedAt, &item.TimePrecision, &item.Data, &item.Revision)
+	err := a.db.QueryRow(r.Context(), `SELECT e.id::text,e.entry_id::text,COALESCE(p.episode_id,m.episode_id)::text,e.kind,e.occurred_at,e.ended_at,e.time_precision,e.attributes,e.revision
+		FROM health_events e
+		LEFT JOIN pain_observations p ON p.event_id=e.id
+		LEFT JOIN medication_intakes m ON m.event_id=e.id
+		WHERE e.id=$1 AND e.user_id=$2 AND e.status='confirmed' AND e.deleted_at IS NULL`,
+		r.PathValue("id"), user.ID).Scan(&item.ID, &item.EntryID, &item.EpisodeID, &item.Kind, &item.OccurredAt, &item.EndedAt, &item.TimePrecision, &item.Data, &item.Revision)
 	if errors.Is(err, pgx.ErrNoRows) {
 		writeAPIError(w, r, 404, "event_not_found", "Событие не найдено", nil)
 		return
@@ -155,7 +165,12 @@ func (a *App) patchEvent(w http.ResponseWriter, r *http.Request) {
 		next.TimePrecision = *input.TimePrecision
 	}
 	if input.Data != nil {
-		next.Data = input.Data
+		merged, err := mergeEventData(current.Data, input.Data)
+		if err != nil {
+			writeAPIError(w, r, 422, "validation_failed", "Проверьте введённые данные", map[string]string{"data": "must be a JSON object"})
+			return
+		}
+		next.Data = merged
 	}
 	if fields := validateEvent(next); len(fields) > 0 {
 		writeAPIError(w, r, 422, "validation_failed", "Проверьте введённые данные", fields)
@@ -178,8 +193,29 @@ func (a *App) patchEvent(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, r, 500, "internal_error", "Не удалось сохранить событие", nil)
 		return
 	}
-	_ = a.syncEpisodeProjection(r.Context(), user.ID)
+	_ = episode.SyncConfirmed(r.Context(), a.db, a.cipher, user.ID)
 	writeJSON(w, 200, next)
+}
+
+func mergeEventData(current, patch json.RawMessage) (json.RawMessage, error) {
+	base := map[string]any{}
+	if len(current) > 0 {
+		if err := json.Unmarshal(current, &base); err != nil {
+			return nil, err
+		}
+	}
+	updates := map[string]any{}
+	if err := json.Unmarshal(patch, &updates); err != nil {
+		return nil, err
+	}
+	for key, value := range updates {
+		if value == nil {
+			delete(base, key)
+			continue
+		}
+		base[key] = value
+	}
+	return json.Marshal(base)
 }
 
 func validateEvent(event eventDTO) map[string]string {
@@ -209,11 +245,22 @@ func validateEvent(event eventDTO) map[string]string {
 	case "pain_observation":
 		checkRange("intensity", 0, 10)
 		checkRange("functional_impact", 0, 3)
+		if value, ok := data["phase"]; ok && value != nil {
+			text, ok := value.(string)
+			if !ok || (text != "start" && text != "update" && text != "end") {
+				fields["data.phase"] = "must be start, update or end"
+			}
+		}
 	case "medication_intake":
 		if value, ok := data["dose_value"].(float64); ok && value <= 0 {
 			fields["data.dose_value"] = "must be positive"
 		}
 		checkRange("effect_rating", -2, 2)
+		if value, ok := data["name_raw"]; ok && value != nil {
+			if _, ok := value.(string); !ok {
+				fields["data.name_raw"] = "must be a string"
+			}
+		}
 	case "wellbeing":
 		for _, name := range []string{"wellbeing_score", "energy_score", "mood_score", "stress_score", "sleep_quality"} {
 			checkRange(name, 0, 10)
@@ -359,8 +406,11 @@ func (a *App) dayTimeline(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, r, 422, "validation_failed", "Проверьте дату", map[string]string{"date": "must be YYYY-MM-DD"})
 		return
 	}
-	rows, err := a.db.Query(r.Context(), `SELECT id::text,entry_id::text,kind,occurred_at,ended_at,time_precision,attributes,revision
-		FROM health_events WHERE user_id=$1 AND status='confirmed' AND deleted_at IS NULL AND occurred_at >= $2 AND occurred_at < $3 ORDER BY occurred_at,id`,
+	rows, err := a.db.Query(r.Context(), `SELECT e.id::text,e.entry_id::text,COALESCE(p.episode_id,m.episode_id)::text,e.kind,e.occurred_at,e.ended_at,e.time_precision,e.attributes,e.revision
+		FROM health_events e
+		LEFT JOIN pain_observations p ON p.event_id=e.id
+		LEFT JOIN medication_intakes m ON m.event_id=e.id
+		WHERE e.user_id=$1 AND e.status='confirmed' AND e.deleted_at IS NULL AND e.occurred_at >= $2 AND e.occurred_at < $3 ORDER BY e.occurred_at,e.id`,
 		user.ID, date.UTC(), date.AddDate(0, 0, 1).UTC())
 	if err != nil {
 		writeAPIError(w, r, 500, "internal_error", "Не удалось загрузить день", nil)
@@ -370,7 +420,7 @@ func (a *App) dayTimeline(w http.ResponseWriter, r *http.Request) {
 	items := []eventDTO{}
 	for rows.Next() {
 		var item eventDTO
-		_ = rows.Scan(&item.ID, &item.EntryID, &item.Kind, &item.OccurredAt, &item.EndedAt, &item.TimePrecision, &item.Data, &item.Revision)
+		_ = rows.Scan(&item.ID, &item.EntryID, &item.EpisodeID, &item.Kind, &item.OccurredAt, &item.EndedAt, &item.TimePrecision, &item.Data, &item.Revision)
 		items = append(items, item)
 	}
 	var pending int
@@ -395,10 +445,13 @@ func (a *App) pendingBatchesV1(w http.ResponseWriter, r *http.Request) {
 	}
 	defer rows.Close()
 	type batch struct {
-		ID, EntryID, SourceType string
-		Version                 int
-		CreatedAt, MessageAt    time.Time
-		Events                  []map[string]any
+		ID         string           `json:"id"`
+		EntryID    string           `json:"entry_id"`
+		SourceType string           `json:"source_type"`
+		Version    int              `json:"version"`
+		CreatedAt  time.Time        `json:"created_at"`
+		MessageAt  time.Time        `json:"message_at"`
+		Events     []map[string]any `json:"events"`
 	}
 	ordered := []*batch{}
 	index := map[string]*batch{}
@@ -627,8 +680,8 @@ func (a *App) analyticsMedications(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, r, 422, "validation_failed", "Проверьте период", map[string]string{"from": "required YYYY-MM-DD", "to": "required YYYY-MM-DD"})
 		return
 	}
-	rows, err := a.db.Query(r.Context(), `SELECT COALESCE(NULLIF(attributes->>'medication_name_normalized',''),'Не указано'),
-		count(*),count(DISTINCT (occurred_at AT TIME ZONE $4)::date),count(*) FILTER (WHERE attributes->'effect_rating' IS NOT NULL)
+	rows, err := a.db.Query(r.Context(), `SELECT COALESCE(NULLIF(attributes->>'normalized_name',''),NULLIF(attributes->>'medication_name_normalized',''),NULLIF(attributes->>'name_raw',''),NULLIF(attributes->>'name',''),'Не указано'),
+		count(*),count(DISTINCT (occurred_at AT TIME ZONE $4)::date),count(*) FILTER (WHERE attributes->'effect_rating' IS NOT NULL AND attributes->>'effect_rating' <> 'null')
 		FROM health_events WHERE user_id=$1 AND status='confirmed' AND deleted_at IS NULL AND kind='medication_intake'
 		AND occurred_at >= $2 AND occurred_at < $3 GROUP BY 1 ORDER BY count(*) DESC`, user.ID, from, to, user.Timezone)
 	if err != nil {
@@ -647,69 +700,12 @@ func (a *App) analyticsMedications(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *App) syncEpisodeProjection(ctx context.Context, userID string) error {
-	rows, err := a.db.Query(ctx, `SELECT e.id::text,e.occurred_at,e.time_precision,e.attributes
-		FROM health_events e LEFT JOIN pain_observations p ON p.event_id=e.id
-		WHERE e.user_id=$1 AND e.kind='pain_observation' AND e.status='confirmed' AND e.deleted_at IS NULL AND p.event_id IS NULL
-		ORDER BY e.occurred_at,e.id`, userID)
-	if err != nil {
-		return err
-	}
-	defer rows.Close()
-	type pain struct {
-		id, precision string
-		at            time.Time
-		data          map[string]any
-	}
-	var pending []pain
-	for rows.Next() {
-		var item pain
-		var raw json.RawMessage
-		if err := rows.Scan(&item.id, &item.at, &item.precision, &raw); err != nil {
-			return err
-		}
-		_ = json.Unmarshal(raw, &item.data)
-		pending = append(pending, item)
-	}
-	for _, item := range pending {
-		phase, _ := item.data["phase"].(string)
-		if phase == "" {
-			phase = "update"
-		}
-		var episodeID string
-		if phase != "start" {
-			_ = a.db.QueryRow(ctx, `SELECT id::text FROM symptom_episodes WHERE user_id=$1 AND status='open' AND started_at <= $2 ORDER BY started_at DESC LIMIT 1`, userID, item.at).Scan(&episodeID)
-		}
-		if episodeID == "" {
-			if err := a.db.QueryRow(ctx, `INSERT INTO symptom_episodes(user_id,started_at,start_precision,created_from_event_id) VALUES($1,$2,$3,$4) RETURNING id::text`, userID, item.at, item.precision, item.id).Scan(&episodeID); err != nil {
-				return err
-			}
-			if phase != "end" {
-				phase = "start"
-			}
-		}
-		var intensity any
-		if value, ok := item.data["intensity"].(float64); ok {
-			intensity = int(value)
-		}
-		if _, err := a.db.Exec(ctx, `INSERT INTO pain_observations(event_id,episode_id,phase,intensity) VALUES($1,$2,$3,$4) ON CONFLICT(event_id) DO NOTHING`, item.id, episodeID, phase, intensity); err != nil {
-			return err
-		}
-		if phase == "end" {
-			_, err = a.db.Exec(ctx, `UPDATE symptom_episodes SET ended_at=$2,end_precision=$3,status='closed',updated_at=now() WHERE id=$1 AND user_id=$4`, episodeID, item.at, item.precision, userID)
-			if err != nil {
-				return err
-			}
-		}
-	}
-	_, err = a.db.Exec(ctx, `UPDATE symptom_episodes s SET max_intensity=x.max_intensity,updated_at=now()
-		FROM (SELECT p.episode_id,max(p.intensity) max_intensity FROM pain_observations p JOIN health_events e ON e.id=p.event_id
-		WHERE e.user_id=$1 AND e.status='confirmed' AND e.deleted_at IS NULL GROUP BY p.episode_id) x WHERE s.id=x.episode_id AND s.user_id=$1`, userID)
-	return err
+	return episode.SyncConfirmed(ctx, a.db, a.cipher, userID)
 }
 
 func (a *App) episodes(w http.ResponseWriter, r *http.Request) {
 	user := sessionUser(r)
-	_ = a.syncEpisodeProjection(r.Context(), user.ID)
+	_ = episode.SyncConfirmed(r.Context(), a.db, a.cipher, user.ID)
 	status := r.URL.Query().Get("status")
 	if status != "" && status != "open" && status != "closed" {
 		writeAPIError(w, r, 422, "validation_failed", "Проверьте параметры", map[string]string{"status": "must be open or closed"})
@@ -746,7 +742,7 @@ func episodeMap(id string, started time.Time, ended *time.Time, startPrecision s
 
 func (a *App) episodeDetail(w http.ResponseWriter, r *http.Request) {
 	user := sessionUser(r)
-	_ = a.syncEpisodeProjection(r.Context(), user.ID)
+	_ = episode.SyncConfirmed(r.Context(), a.db, a.cipher, user.ID)
 	var id, startPrecision, status string
 	var endPrecision *string
 	var started time.Time
@@ -759,7 +755,7 @@ func (a *App) episodeDetail(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, r, 404, "episode_not_found", "Эпизод не найден", nil)
 		return
 	}
-	rows, err := a.db.Query(r.Context(), `SELECT e.id::text,e.entry_id::text,e.kind,e.occurred_at,e.ended_at,e.time_precision,e.attributes,e.revision
+	rows, err := a.db.Query(r.Context(), `SELECT e.id::text,e.entry_id::text,COALESCE(p.episode_id,m.episode_id)::text,e.kind,e.occurred_at,e.ended_at,e.time_precision,e.attributes,e.revision
 		FROM health_events e LEFT JOIN pain_observations p ON p.event_id=e.id LEFT JOIN medication_intakes m ON m.event_id=e.id
 		WHERE e.user_id=$1 AND e.status='confirmed' AND e.deleted_at IS NULL AND (p.episode_id=$2 OR m.episode_id=$2) ORDER BY e.occurred_at`, user.ID, id)
 	if err != nil {
@@ -770,7 +766,7 @@ func (a *App) episodeDetail(w http.ResponseWriter, r *http.Request) {
 	events := []eventDTO{}
 	for rows.Next() {
 		var item eventDTO
-		_ = rows.Scan(&item.ID, &item.EntryID, &item.Kind, &item.OccurredAt, &item.EndedAt, &item.TimePrecision, &item.Data, &item.Revision)
+		_ = rows.Scan(&item.ID, &item.EntryID, &item.EpisodeID, &item.Kind, &item.OccurredAt, &item.EndedAt, &item.TimePrecision, &item.Data, &item.Revision)
 		events = append(events, item)
 	}
 	value := episodeMap(id, started, ended, startPrecision, endPrecision, status, intensity, revision)
@@ -852,5 +848,5 @@ func (a *App) mutateEpisode(w http.ResponseWriter, r *http.Request, revision int
 }
 
 func (a *App) afterEventMutation(r *http.Request) {
-	_ = a.syncEpisodeProjection(r.Context(), sessionUser(r).ID)
+	_ = episode.SyncConfirmed(r.Context(), a.db, a.cipher, sessionUser(r).ID)
 }

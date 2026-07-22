@@ -156,9 +156,11 @@ only carrier of pain level, event kind, pending status or validation error.
 
 ### 5.3 Content style
 
-- Display `Головная боль`, not `pain_observation`.
+- Display `Головная боль`, not `pain_observation` or `Наблюдение боли`; use phase-aware titles such as `Головная боль · началась` / `усилилась` / `прошла`.
+- Display medication as the stated name (`Цитрамон`), not only the generic kind label.
+- Event cards read API keys `name_raw`/`normalized_name`, `locations`, `qualities`, `associated_symptoms`, `entry_id`.
 - Display `Время указано приблизительно`, not internal precision enums.
-- Display unknown values as `Не указано`, not `null`, `0` or an empty gap.
+- Display unknown values as `Не указано`, not `null`, `0` or an empty gap. Calendar max intensity without a score is `?/10`.
 - Use `Возможная связь` and exact sample counts; never `причина` or `триггер`.
 - Avoid guilt language such as “вы пропустили день”. Say “За этот день нет
   записей”.

@@ -21,6 +21,7 @@ import (
 	"health-diary/internal/config"
 	"health-diary/internal/crypto"
 	"health-diary/internal/database"
+	"health-diary/internal/episode"
 	"health-diary/internal/ingest"
 	"health-diary/internal/jobs"
 	"health-diary/internal/journal"
@@ -74,7 +75,7 @@ func (a *App) Run(ctx context.Context, shutdownTimeout time.Duration) error {
 		if pool == nil {
 			return fmt.Errorf("telegram requires DATABASE_URL")
 		}
-		handler := bot.NewHandler(pool, ingest.New(pool, a.cipher, a.config.JobMaxAttempts), a.auth, a.config.Telegram.AllowedUserIDs, a.logger)
+		handler := bot.NewHandler(pool, ingest.New(pool, a.cipher, a.config.JobMaxAttempts), a.auth, a.cipher, a.config.Telegram.AllowedUserIDs, a.logger)
 		var extractor llm.Extractor = llm.Fake{}
 		provider, model := "fake", "fake"
 		if a.config.LLMAPIKey != "" {
@@ -250,7 +251,7 @@ func (a *App) transitionBatch(w http.ResponseWriter, r *http.Request, confirmed 
 		return
 	}
 	if confirmed {
-		_ = a.syncEpisodeProjection(r.Context(), user.ID)
+		_ = episode.SyncConfirmed(r.Context(), a.db, a.cipher, user.ID)
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
