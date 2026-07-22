@@ -27,8 +27,9 @@ type Challenge struct {
 }
 
 type SessionUser struct {
-	ID, Timezone string
-	CreatedAt    time.Time
+	ID, Timezone, Locale, DayStart string
+	Settings                       []byte
+	CreatedAt                      time.Time
 }
 
 func NewService(db *pgxpool.Pool, codeTTL, sessionTTL time.Duration, maxAttempts int) *Service {
@@ -132,7 +133,11 @@ func (s *Service) Verify(ctx context.Context, challengeID, code string) (string,
 
 func (s *Service) SessionUser(ctx context.Context, token string) (SessionUser, error) {
 	var user SessionUser
-	err := s.db.QueryRow(ctx, `SELECT u.id::text,COALESCE(NULLIF(btrim(u.timezone),''),'Europe/Moscow'),s.created_at FROM web_sessions s JOIN users u ON u.id=s.user_id WHERE s.token_hash=$1 AND s.expires_at>now() AND s.revoked_at IS NULL AND u.status='active'`, Hash(token)).Scan(&user.ID, &user.Timezone, &user.CreatedAt)
+	err := s.db.QueryRow(ctx, `SELECT u.id::text,COALESCE(NULLIF(btrim(u.timezone),''),'Europe/Moscow'),u.locale,u.settings,
+		COALESCE(NULLIF(u.settings->>'day_start_time',''),'00:00'),s.created_at
+		FROM web_sessions s JOIN users u ON u.id=s.user_id
+		WHERE s.token_hash=$1 AND s.expires_at>now() AND s.revoked_at IS NULL AND u.status='active'`, Hash(token)).
+		Scan(&user.ID, &user.Timezone, &user.Locale, &user.Settings, &user.DayStart, &user.CreatedAt)
 	return user, err
 }
 

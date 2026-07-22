@@ -16,7 +16,9 @@ status = 'confirmed' AND deleted_at IS NULL
 
 Additionally:
 
-- use the user timezone when assigning events to calendar days;
+- use the user timezone and configured `settings.day_start_time` when assigning
+  events to calendar days; the default boundary is `00:00`, while `05:00`
+  assigns observations from 00:00 through 04:59 to the preceding user day;
 - exclude pending/rejected/superseded events;
 - distinguish unknown end from zero duration;
 - distinguish “no entry” from explicit “no headache”;

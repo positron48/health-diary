@@ -23,7 +23,7 @@
 | `locale` | text | Default `ru` |
 | `timezone` | text | IANA timezone |
 | `status` | text | `active`, `disabled`, `deletion_pending` |
-| `settings` | jsonb | Versioned non-secret preferences |
+| `settings` | jsonb | Versioned non-secret preferences; `day_start_time` is `HH:MM`, default `00:00` |
 | `created_at`, `updated_at` | timestamptz | |
 
 ### `telegram_updates`

@@ -5,9 +5,13 @@ import { Activity, Bed, ChevronLeft, ChevronRight, HeartPulse, Pill, Smile } fro
 import { calendarApi, type CalendarMode } from '../api/calendar'
 import type { CalendarDay } from '../api/types'
 import { useAsyncState } from '../composables/useAsyncState'
+import { useSession } from '../composables/useSession'
+import { userDate } from '../utils/userDay'
 import StatePanel from '../components/ui/StatePanel.vue'
 
-const route = useRoute(), router = useRouter(), now = new Date(), fallbackMonth = now.toISOString().slice(0, 7)
+const route = useRoute(), router = useRouter(), session = useSession()
+const currentDate = session.user.value?.current_local_date || userDate(new Date(), session.user.value?.timezone || 'Europe/Moscow', session.user.value?.settings?.day_start_time)
+const fallbackMonth = currentDate.slice(0, 7)
 const modes: Array<[CalendarMode, string]> = [['overview', 'Обзор'], ['pain', 'Боль'], ['medication', 'Лекарства'], ['activity', 'Активность'], ['sleep', 'Сон'], ['wellbeing', 'Самочувствие']]
 const month = computed(() => String(route.params.month || fallbackMonth))
 const mode = computed(() => (route.query.mode || 'overview') as CalendarMode)
@@ -62,8 +66,13 @@ function toneClass(day: CalendarDay) {
 
 function move(delta: number) {
   const [y, m] = month.value.split('-').map(Number)
-  const d = new Date(y, m - 1 + delta, 1)
-  router.push({ path: `/calendar/${d.toISOString().slice(0, 7)}`, query: { ...route.query } })
+  const index = y * 12 + m - 1 + delta
+  const target = `${Math.floor(index / 12)}-${String(index % 12 + 1).padStart(2, '0')}`
+  router.push({ path: `/calendar/${target}`, query: { ...route.query } })
+}
+
+function goToday() {
+  router.push({ path: `/calendar/${fallbackMonth}`, query: { mode: mode.value, day: currentDate } })
 }
 
 watch([month, mode], () => load())
@@ -78,7 +87,7 @@ onMounted(() => load())
       </div>
       <div class="cluster">
         <button class="button button--secondary icon-nav" aria-label="Предыдущий месяц" @click="move(-1)"><ChevronLeft :size="18" /></button>
-        <button class="button button--secondary" @click="$router.push('/calendar')">Сегодня</button>
+        <button class="button button--secondary" @click="goToday">Сегодня</button>
         <button class="button button--secondary icon-nav" aria-label="Следующий месяц" @click="move(1)"><ChevronRight :size="18" /></button>
       </div>
     </header>

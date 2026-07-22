@@ -3,8 +3,9 @@ import { computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { analyticsApi } from '../api/analytics'
 import { useAsyncState } from '../composables/useAsyncState'
+import { useSession } from '../composables/useSession'
 import StatePanel from '../components/ui/StatePanel.vue'
-const route=useRoute(),router=useRouter(),period=computed(()=>Number(route.query.period)||30),{data,loading,error,load}=useAsyncState(()=>analyticsApi.summary(period.value))
+const route=useRoute(),router=useRouter(),session=useSession(),period=computed(()=>Number(route.query.period)||30),{data,loading,error,load}=useAsyncState(()=>analyticsApi.summary(period.value,session.user.value?.timezone,session.user.value?.settings?.day_start_time))
 const sections=computed<Array<[string,Record<string,number|null>|undefined]>>(()=>data.value?[['Головная боль',data.value.pain],['Лекарства',data.value.medication],['Сон',data.value.sleep],['Активность',data.value.activity],['Самочувствие',data.value.wellbeing]]:[])
 watch(period,()=>load());onMounted(()=>load())
 </script>

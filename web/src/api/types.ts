@@ -24,7 +24,16 @@ export interface PendingBatch {
   message_at?: string
   events: HealthEvent[]
 }
-export interface Session { id: string; timezone: string; locale?: string; display_name?: string; expires_at?: string }
+export interface UserSettings { day_start_time?: string }
+export interface Session {
+  id: string
+  timezone: string
+  locale?: string
+  settings?: UserSettings
+  current_local_date?: string
+  display_name?: string
+  expires_at?: string
+}
 export interface CalendarDay {
   date: string; has_data: boolean; pending_count?: number
   pain?: { episodes: number; max_intensity: number | null; open?: boolean }

@@ -76,6 +76,12 @@ This is a lightweight ADR registry. Update status and rationale before changing 
 - Decision: MVP export is an authenticated, no-store `GET /api/v1/exports?format=json|csv`; asynchronous export artifacts remain deferred.
 - Reason: current personal-user volume does not justify stored export artifacts, cleanup jobs or download tokens. The contract is explicit and can evolve as a new version when measured size requires it.
 
+### ADR-013: Configurable user-day boundary
+
+- Status: accepted
+- Decision: each user may configure `settings.day_start_time` as `HH:MM`; the default is `00:00`. Calendar cells, day timelines, date-filtered reads and analytics use `[date + day_start_time, next date + day_start_time)` in the user's timezone.
+- Reason: observations recorded after midnight may still belong to the user's preceding waking day. One shared boundary keeps calendar and analytics consistent without changing stored UTC timestamps.
+
 ### ADR-D01: LLM provider
 
 - Status: accepted

@@ -66,8 +66,12 @@ func TestCalendarDayAggregatesDeterministically(t *testing.T) {
 }
 
 func TestParseRangeUsesInclusiveLocalDates(t *testing.T) {
-	from, to, fields := parseRange("2026-07-01", "2026-07-01", "Europe/Moscow")
+	from, to, fields := parseRange("2026-07-01", "2026-07-01", "Europe/Moscow", "05:00")
 	if len(fields) != 0 || from == nil || to == nil || to.Sub(*from) != 24*time.Hour {
 		t.Fatalf("unexpected range: from=%v to=%v fields=%v", from, to, fields)
+	}
+	loc, _ := time.LoadLocation("Europe/Moscow")
+	if from.In(loc).Format("15:04") != "05:00" || to.In(loc).Format("15:04") != "05:00" {
+		t.Fatalf("range must use configured day start: from=%v to=%v", from, to)
 	}
 }

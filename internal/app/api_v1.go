@@ -12,6 +12,7 @@ import (
 	"health-diary/internal/analytics"
 	"health-diary/internal/auth"
 	"health-diary/internal/episode"
+	"health-diary/internal/userday"
 
 	"github.com/jackc/pgx/v5"
 )
@@ -44,7 +45,7 @@ func (a *App) eventsV1(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, r, 422, "validation_failed", "Проверьте параметры", map[string]string{"limit": "must be between 1 and 100"})
 		return
 	}
-	from, to, fields := parseRange(q.Get("from"), q.Get("to"), user.Timezone)
+	from, to, fields := parseRange(q.Get("from"), q.Get("to"), user.Timezone, user.DayStart)
 	kinds := q["kind"]
 	for _, kind := range kinds {
 		if !eventKinds[kind] {
@@ -293,10 +294,12 @@ func (a *App) calendarV1(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	loc := userLocation(user.Timezone)
-	start := time.Date(month.Year(), month.Month(), 1, 0, 0, 0, 0, loc)
-	end := start.AddDate(0, 1, 0)
+	dayStart := userday.Start(user.DayStart)
+	start, _, _ := userday.Bounds(month.Format("2006-01-02"), loc, dayStart)
+	nextMonth := month.AddDate(0, 1, 0)
+	end, _, _ := userday.Bounds(nextMonth.Format("2006-01-02"), loc, dayStart)
 	rows, err := a.db.Query(r.Context(), `SELECT occurred_at,kind,attributes FROM health_events
-		WHERE user_id=$1 AND status='confirmed' AND deleted_at IS NULL AND occurred_at >= $2 AND occurred_at < $3 ORDER BY occurred_at`, user.ID, start.UTC(), end.UTC())
+		WHERE user_id=$1 AND status='confirmed' AND deleted_at IS NULL AND occurred_at >= $2 AND occurred_at < $3 ORDER BY occurred_at`, user.ID, start, end)
 	if err != nil {
 		writeAPIError(w, r, 500, "internal_error", "Не удалось загрузить календарь", nil)
 		return
@@ -311,7 +314,7 @@ func (a *App) calendarV1(w http.ResponseWriter, r *http.Request) {
 			writeAPIError(w, r, 500, "internal_error", "Не удалось загрузить календарь", nil)
 			return
 		}
-		date := at.In(loc).Format("2006-01-02")
+		date := userday.Date(at, loc, dayStart)
 		day := days[date]
 		if day == nil {
 			day = &calendarDay{Date: date, HasData: true}
@@ -319,25 +322,25 @@ func (a *App) calendarV1(w http.ResponseWriter, r *http.Request) {
 		}
 		day.add(kind, data)
 	}
-	pendingRows, _ := a.db.Query(r.Context(), `SELECT (e.occurred_at AT TIME ZONE $2)::date::text,count(*)
+	pendingRows, _ := a.db.Query(r.Context(), `SELECT e.occurred_at
 		FROM health_events e WHERE e.user_id=$1 AND e.status='pending' AND e.deleted_at IS NULL
-		AND e.occurred_at >= $3 AND e.occurred_at < $4 GROUP BY 1`, user.ID, user.Timezone, start.UTC(), end.UTC())
+		AND e.occurred_at >= $2 AND e.occurred_at < $3`, user.ID, start, end)
 	if pendingRows != nil {
 		defer pendingRows.Close()
 		for pendingRows.Next() {
-			var date string
-			var count int
-			_ = pendingRows.Scan(&date, &count)
+			var at time.Time
+			_ = pendingRows.Scan(&at)
+			date := userday.Date(at, loc, dayStart)
 			day := days[date]
 			if day == nil {
 				day = &calendarDay{Date: date}
 				days[date] = day
 			}
-			day.PendingCount = count
+			day.PendingCount++
 		}
 	}
 	result := []calendarDay{}
-	for day := start; day.Before(end); day = day.AddDate(0, 0, 1) {
+	for day := month; day.Before(nextMonth); day = day.AddDate(0, 0, 1) {
 		date := day.Format("2006-01-02")
 		if value := days[date]; value != nil {
 			result = append(result, *value)
@@ -401,7 +404,7 @@ func (d *calendarDay) add(kind string, raw json.RawMessage) {
 
 func (a *App) dayTimeline(w http.ResponseWriter, r *http.Request) {
 	user := sessionUser(r)
-	date, err := time.ParseInLocation("2006-01-02", r.PathValue("date"), userLocation(user.Timezone))
+	from, to, err := userday.Bounds(r.PathValue("date"), userLocation(user.Timezone), userday.Start(user.DayStart))
 	if err != nil {
 		writeAPIError(w, r, 422, "validation_failed", "Проверьте дату", map[string]string{"date": "must be YYYY-MM-DD"})
 		return
@@ -411,7 +414,7 @@ func (a *App) dayTimeline(w http.ResponseWriter, r *http.Request) {
 		LEFT JOIN pain_observations p ON p.event_id=e.id
 		LEFT JOIN medication_intakes m ON m.event_id=e.id
 		WHERE e.user_id=$1 AND e.status='confirmed' AND e.deleted_at IS NULL AND e.occurred_at >= $2 AND e.occurred_at < $3 ORDER BY e.occurred_at,e.id`,
-		user.ID, date.UTC(), date.AddDate(0, 0, 1).UTC())
+		user.ID, from, to)
 	if err != nil {
 		writeAPIError(w, r, 500, "internal_error", "Не удалось загрузить день", nil)
 		return
@@ -425,7 +428,7 @@ func (a *App) dayTimeline(w http.ResponseWriter, r *http.Request) {
 	}
 	var pending int
 	_ = a.db.QueryRow(r.Context(), `SELECT count(*) FROM health_events WHERE user_id=$1 AND status='pending' AND deleted_at IS NULL AND occurred_at >= $2 AND occurred_at < $3`,
-		user.ID, date.UTC(), date.AddDate(0, 0, 1).UTC()).Scan(&pending)
+		user.ID, from, to).Scan(&pending)
 	writeJSON(w, 200, map[string]any{"date": r.PathValue("date"), "timezone": user.Timezone, "events": items, "confirmed_count": len(items), "pending_count": pending})
 }
 
@@ -535,6 +538,13 @@ func (a *App) patchMe(w http.ResponseWriter, r *http.Request) {
 		var settings map[string]any
 		if json.Unmarshal(input.Settings, &settings) != nil {
 			fields["settings"] = "must be an object"
+		} else if value, ok := settings["day_start_time"]; ok {
+			text, ok := value.(string)
+			if !ok {
+				fields["settings.day_start_time"] = "must be HH:MM"
+			} else if _, err := userday.ParseStart(text); err != nil {
+				fields["settings.day_start_time"] = "must be HH:MM"
+			}
 		}
 	}
 	if len(fields) > 0 {
@@ -578,29 +588,25 @@ func nullJSON(raw json.RawMessage) any {
 	return raw
 }
 
-func parseRange(fromText, toText, timezone string) (*time.Time, *time.Time, map[string]string) {
+func parseRange(fromText, toText, timezone, dayStartText string) (*time.Time, *time.Time, map[string]string) {
 	fields := map[string]string{}
 	loc := userLocation(timezone)
-	parse := func(value, name string) *time.Time {
+	dayStart := userday.Start(dayStartText)
+	parse := func(value, name string, inclusiveEnd bool) *time.Time {
 		if value == "" {
 			return nil
 		}
-		valueTime, err := time.ParseInLocation("2006-01-02", value, loc)
+		from, to, err := userday.Bounds(value, loc, dayStart)
 		if err != nil {
 			fields[name] = "must be YYYY-MM-DD"
 			return nil
 		}
-		return &valueTime
+		if inclusiveEnd {
+			return &to
+		}
+		return &from
 	}
-	from, to := parse(fromText, "from"), parse(toText, "to")
-	if from != nil {
-		value := from.UTC()
-		from = &value
-	}
-	if to != nil {
-		value := to.AddDate(0, 0, 1).UTC()
-		to = &value
-	}
+	from, to := parse(fromText, "from", false), parse(toText, "to", true)
 	if from != nil && to != nil && !from.Before(*to) {
 		fields["to"] = "must not be before from"
 	}
@@ -613,7 +619,7 @@ func sessionUser(r *http.Request) auth.SessionUser {
 
 func (a *App) analyticsSummaryV1(w http.ResponseWriter, r *http.Request) {
 	user := sessionUser(r)
-	from, to, fields := parseRange(r.URL.Query().Get("from"), r.URL.Query().Get("to"), user.Timezone)
+	from, to, fields := parseRange(r.URL.Query().Get("from"), r.URL.Query().Get("to"), user.Timezone, user.DayStart)
 	if len(fields) > 0 || from == nil || to == nil {
 		if from == nil {
 			fields["from"] = "is required"
@@ -629,7 +635,7 @@ func (a *App) analyticsSummaryV1(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, r, 500, "internal_error", "Не удалось рассчитать аналитику", nil)
 		return
 	}
-	summary := analytics.BuildSummary(events, from.In(userLocation(user.Timezone)), to.In(userLocation(user.Timezone)), user.Timezone)
+	summary := analytics.BuildSummary(events, from.In(userLocation(user.Timezone)), to.In(userLocation(user.Timezone)), user.Timezone, userday.Start(user.DayStart))
 	var pending, episodes, closed int
 	_ = a.db.QueryRow(r.Context(), `SELECT count(*) FROM health_events WHERE user_id=$1 AND status='pending' AND deleted_at IS NULL AND occurred_at >= $2 AND occurred_at < $3`, user.ID, from, to).Scan(&pending)
 	_ = a.db.QueryRow(r.Context(), `SELECT count(*),count(*) FILTER (WHERE status='closed') FROM symptom_episodes WHERE user_id=$1 AND started_at < $3 AND COALESCE(ended_at,$3)>=$2`, user.ID, from, to).Scan(&episodes, &closed)
@@ -638,7 +644,7 @@ func (a *App) analyticsSummaryV1(w http.ResponseWriter, r *http.Request) {
 
 func (a *App) analyticsAssociations(w http.ResponseWriter, r *http.Request) {
 	user := sessionUser(r)
-	from, to, fields := parseRange(r.URL.Query().Get("from"), r.URL.Query().Get("to"), user.Timezone)
+	from, to, fields := parseRange(r.URL.Query().Get("from"), r.URL.Query().Get("to"), user.Timezone, user.DayStart)
 	if len(fields) > 0 || from == nil || to == nil {
 		writeAPIError(w, r, 422, "validation_failed", "Проверьте период", map[string]string{"from": "required YYYY-MM-DD", "to": "required YYYY-MM-DD"})
 		return
@@ -660,7 +666,7 @@ func (a *App) analyticsAssociations(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		if event.Kind == "sleep" || event.Kind == "activity" || event.Kind == "wellbeing" {
-			exposureDays[event.OccurredAt.In(userLocation(user.Timezone)).Format("2006-01-02")] = true
+			exposureDays[userday.Date(event.OccurredAt, userLocation(user.Timezone), userday.Start(user.DayStart))] = true
 		}
 	}
 	requirements := map[string]any{
@@ -675,15 +681,15 @@ func (a *App) analyticsAssociations(w http.ResponseWriter, r *http.Request) {
 
 func (a *App) analyticsMedications(w http.ResponseWriter, r *http.Request) {
 	user := sessionUser(r)
-	from, to, fields := parseRange(r.URL.Query().Get("from"), r.URL.Query().Get("to"), user.Timezone)
+	from, to, fields := parseRange(r.URL.Query().Get("from"), r.URL.Query().Get("to"), user.Timezone, user.DayStart)
 	if len(fields) > 0 || from == nil || to == nil {
 		writeAPIError(w, r, 422, "validation_failed", "Проверьте период", map[string]string{"from": "required YYYY-MM-DD", "to": "required YYYY-MM-DD"})
 		return
 	}
 	rows, err := a.db.Query(r.Context(), `SELECT COALESCE(NULLIF(attributes->>'normalized_name',''),NULLIF(attributes->>'medication_name_normalized',''),NULLIF(attributes->>'name_raw',''),NULLIF(attributes->>'name',''),'Не указано'),
-		count(*),count(DISTINCT (occurred_at AT TIME ZONE $4)::date),count(*) FILTER (WHERE attributes->'effect_rating' IS NOT NULL AND attributes->>'effect_rating' <> 'null')
+		count(*),count(DISTINCT ((occurred_at AT TIME ZONE $4) - make_interval(mins => $5))::date),count(*) FILTER (WHERE attributes->'effect_rating' IS NOT NULL AND attributes->>'effect_rating' <> 'null')
 		FROM health_events WHERE user_id=$1 AND status='confirmed' AND deleted_at IS NULL AND kind='medication_intake'
-		AND occurred_at >= $2 AND occurred_at < $3 GROUP BY 1 ORDER BY count(*) DESC`, user.ID, from, to, user.Timezone)
+		AND occurred_at >= $2 AND occurred_at < $3 GROUP BY 1 ORDER BY count(*) DESC`, user.ID, from, to, user.Timezone, int(userday.Start(user.DayStart).Minutes()))
 	if err != nil {
 		writeAPIError(w, r, 500, "internal_error", "Не удалось рассчитать лекарства", nil)
 		return

@@ -1,5 +1,6 @@
 import { API_BASE, request } from './client'
 import type { AnalyticsSummary } from './types'
+import { userDate } from '../utils/userDay'
 
 interface SummaryResponse {
   coverage: { observation_days: number; diary_days: number; confirmed_events: number; pending_events: number; episodes: number; closed_episodes: number }
@@ -11,11 +12,12 @@ interface SummaryResponse {
   formula_version: string
 }
 export const analyticsApi = {
-  async summary(days: number): Promise<AnalyticsSummary> {
-    const to = new Date(), from = new Date(to)
-    from.setDate(from.getDate() - days + 1)
-    const date = (value: Date) => value.toISOString().slice(0, 10)
-    const response = await request<SummaryResponse>(`${API_BASE}/analytics/summary?from=${date(from)}&to=${date(to)}`)
+  async summary(days: number, timezone = 'Europe/Moscow', dayStart = '00:00'): Promise<AnalyticsSummary> {
+    const to = userDate(new Date(), timezone, dayStart)
+    const fromDate = new Date(`${to}T12:00:00Z`)
+    fromDate.setUTCDate(fromDate.getUTCDate() - days + 1)
+    const from = fromDate.toISOString().slice(0, 10)
+    const response = await request<SummaryResponse>(`${API_BASE}/analytics/summary?from=${from}&to=${to}`)
     const metrics = response.metrics
     return {
       ...metrics,

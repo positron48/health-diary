@@ -3,9 +3,11 @@ package analytics
 import (
 	"encoding/json"
 	"time"
+
+	"health-diary/internal/userday"
 )
 
-const FormulaVersion = "health-diary-summary-v1"
+const FormulaVersion = "health-diary-summary-v2"
 
 type Summary struct {
 	FormulaVersion             string         `json:"formula_version"`
@@ -35,7 +37,7 @@ type Summary struct {
 
 // BuildSummary has no provider dependency and operates only on already
 // confirmed, non-deleted events supplied by Repository.Events.
-func BuildSummary(events []Event, from, to time.Time, timezone string) Summary {
+func BuildSummary(events []Event, from, to time.Time, timezone string, dayStart time.Duration) Summary {
 	loc, err := time.LoadLocation(timezone)
 	if err != nil {
 		loc = time.UTC
@@ -51,7 +53,7 @@ func BuildSummary(events []Event, from, to time.Time, timezone string) Summary {
 	sleepMinutes, sleepRecords, sleepQualityKnown := 0, 0, 0
 	wellbeingRecords, wellbeingScoreKnown := 0, 0
 	for _, event := range events {
-		day := event.OccurredAt.In(loc).Format("2006-01-02")
+		day := userday.Date(event.OccurredAt, loc, dayStart)
 		daySet[day] = true
 		counts[event.Kind]++
 		if event.Kind == "pain_observation" {

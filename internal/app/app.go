@@ -26,6 +26,7 @@ import (
 	"health-diary/internal/jobs"
 	"health-diary/internal/journal"
 	"health-diary/internal/llm"
+	"health-diary/internal/userday"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -397,7 +398,12 @@ func (a *App) calendar(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	user := r.Context().Value(sessionContextKey{}).(auth.SessionUser)
-	events, err := analytics.New(a.db).Events(r.Context(), user.ID, month.UTC(), month.AddDate(0, 1, 0).UTC())
+	loc := userLocation(user.Timezone)
+	start := userday.Start(user.DayStart)
+	from, _, _ := userday.Bounds(month.Format("2006-01-02"), loc, start)
+	nextMonth := month.AddDate(0, 1, 0)
+	to, _, _ := userday.Bounds(nextMonth.Format("2006-01-02"), loc, start)
+	events, err := analytics.New(a.db).Events(r.Context(), user.ID, from, to)
 	if err != nil {
 		writeAPIError(w, r, 500, "internal_error", "Не удалось загрузить календарь", nil)
 		return
@@ -415,16 +421,20 @@ func (a *App) analyticsSummary(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	loc := userLocation(user.Timezone)
-	to := time.Now().In(loc)
-	from := to.AddDate(0, 0, -days)
-	events, err := analytics.New(a.db).Events(r.Context(), user.ID, from.UTC(), to.UTC())
+	start := userday.Start(user.DayStart)
+	currentDate := userday.CurrentDate(time.Now(), loc, start)
+	_, to, _ := userday.Bounds(currentDate, loc, start)
+	fromDate, _ := time.ParseInLocation("2006-01-02", currentDate, loc)
+	fromDate = fromDate.AddDate(0, 0, -days+1)
+	from, _, _ := userday.Bounds(fromDate.Format("2006-01-02"), loc, start)
+	events, err := analytics.New(a.db).Events(r.Context(), user.ID, from, to)
 	if err != nil {
 		writeAPIError(w, r, 500, "internal_error", "Не удалось рассчитать аналитику", nil)
 		return
 	}
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	_ = json.NewEncoder(w).Encode(analytics.BuildSummary(events, from, to, user.Timezone))
+	_ = json.NewEncoder(w).Encode(analytics.BuildSummary(events, from.In(loc), to.In(loc), user.Timezone, start))
 }
 
 func userLocation(timezone string) *time.Location {
@@ -467,7 +477,14 @@ func (a *App) me(w http.ResponseWriter, r *http.Request) {
 	user := r.Context().Value(sessionContextKey{}).(auth.SessionUser)
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	_ = json.NewEncoder(w).Encode(map[string]string{"id": user.ID, "timezone": user.Timezone})
+	settings := json.RawMessage(user.Settings)
+	if len(settings) == 0 {
+		settings = json.RawMessage(`{}`)
+	}
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"id": user.ID, "timezone": user.Timezone, "locale": user.Locale, "settings": settings,
+		"current_local_date": userday.CurrentDate(time.Now(), userLocation(user.Timezone), userday.Start(user.DayStart)),
+	})
 }
 
 func (a *App) logout(w http.ResponseWriter, r *http.Request) {

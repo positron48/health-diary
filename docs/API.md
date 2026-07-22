@@ -8,7 +8,8 @@ Authentication: server-side session cookie except auth and infrastructure endpoi
 
 ## 1. Common conventions
 
-- Dates: `YYYY-MM-DD` in user timezone.
+- Dates: `YYYY-MM-DD` in the user's configured day. Its half-open interval
+  starts at `settings.day_start_time` (default `00:00`) in the user timezone.
 - Timestamps: RFC3339 with offset or `Z`.
 - IDs: opaque UUID strings; never Telegram IDs.
 - Pagination: cursor-based, newest first unless documented.
@@ -224,6 +225,9 @@ Returns intake days, linked episodes and recorded response. It does not make tre
 ### `GET /me` / `PATCH /me`
 
 Editable: timezone, locale, reminder preferences, raw retention preference and optional tracking fields.
+`settings.day_start_time` accepts `HH:MM` (`00:00` by default). `GET /me`
+also returns `current_local_date` calculated with this boundary so calendar
+navigation and the Today screen use the same date as the backend.
 
 ### `GET /exports?format=json|csv` (MVP)
 
