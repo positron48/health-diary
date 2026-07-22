@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"health-diary/internal/config"
 )
@@ -17,6 +18,18 @@ func TestHealthz(t *testing.T) {
 	}
 	if response.Header().Get("Content-Security-Policy") == "" || response.Header().Get("X-Frame-Options") != "DENY" {
 		t.Fatalf("security headers were not set: %#v", response.Header())
+	}
+}
+
+func TestUserLocationFallsBackToProductDefault(t *testing.T) {
+	if got := userLocation("").String(); got != "Europe/Moscow" {
+		t.Fatalf("empty timezone resolved to %q", got)
+	}
+	if got := userLocation("not/a-timezone").String(); got != "Europe/Moscow" {
+		t.Fatalf("invalid timezone resolved to %q", got)
+	}
+	if got := userLocation("UTC"); got != time.UTC {
+		t.Fatalf("valid timezone resolved to %q", got)
 	}
 }
 

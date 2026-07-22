@@ -119,7 +119,7 @@ func (s *Service) Verify(ctx context.Context, challengeID, code string) (string,
 
 func (s *Service) SessionUser(ctx context.Context, token string) (SessionUser, error) {
 	var user SessionUser
-	err := s.db.QueryRow(ctx, `SELECT u.id::text,u.timezone,s.created_at FROM web_sessions s JOIN users u ON u.id=s.user_id WHERE s.token_hash=$1 AND s.expires_at>now() AND s.revoked_at IS NULL AND u.status='active'`, Hash(token)).Scan(&user.ID, &user.Timezone, &user.CreatedAt)
+	err := s.db.QueryRow(ctx, `SELECT u.id::text,COALESCE(NULLIF(btrim(u.timezone),''),'Europe/Moscow'),s.created_at FROM web_sessions s JOIN users u ON u.id=s.user_id WHERE s.token_hash=$1 AND s.expires_at>now() AND s.revoked_at IS NULL AND u.status='active'`, Hash(token)).Scan(&user.ID, &user.Timezone, &user.CreatedAt)
 	return user, err
 }
 

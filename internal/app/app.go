@@ -356,11 +356,7 @@ func (a *App) analyticsSummary(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "days must be 7, 30, 60 or 90", http.StatusBadRequest)
 		return
 	}
-	loc, err := time.LoadLocation(user.Timezone)
-	if err != nil {
-		http.Error(w, "invalid user timezone", 500)
-		return
-	}
+	loc := userLocation(user.Timezone)
 	to := time.Now().In(loc)
 	from := to.AddDate(0, 0, -days)
 	events, err := analytics.New(a.db).Events(r.Context(), user.ID, from.UTC(), to.UTC())
@@ -371,6 +367,18 @@ func (a *App) analyticsSummary(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	_ = json.NewEncoder(w).Encode(analytics.BuildSummary(events, from, to, user.Timezone))
+}
+
+func userLocation(timezone string) *time.Location {
+	if strings.TrimSpace(timezone) != "" {
+		if loc, err := time.LoadLocation(timezone); err == nil {
+			return loc
+		}
+	}
+	// Existing imported/early accounts may have an empty or invalid timezone.
+	// The product default is Moscow, and analytics must remain available.
+	loc, _ := time.LoadLocation("Europe/Moscow")
+	return loc
 }
 
 type sessionContextKey struct{}
