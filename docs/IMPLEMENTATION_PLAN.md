@@ -447,13 +447,14 @@ Estimate: 1 day.
 3. Morning/evening check-ins, including explicit no-headache days.
 4. Voice transcription with separate privacy boundary.
 5. Printable 8-week PDF report.
-6. Fixed-location weather enrichment.
-7. Temporary clinician read-only report link.
-8. Apple Health/Health Connect bridge/native companion.
-9. Reviewed medication-overuse informational indicator.
-10. Reviewed safety-signal messaging.
+6. Temporary clinician read-only report link.
+7. Apple Health/Health Connect bridge/native companion.
+8. Reviewed medication-overuse informational indicator.
+9. Reviewed safety-signal messaging.
 
-Do not pull these into MVP without updating `PRODUCT.md`, estimates and privacy/security review.
+City-level context periods and Open-Meteo weather enrichment are implemented under ADR-016/017 (unified calendar release), not as deferred weather backlog.
+
+Do not pull remaining backlog items into MVP without updating `PRODUCT.md`, estimates and privacy/security review.
 
 ## Final release acceptance checklist
 

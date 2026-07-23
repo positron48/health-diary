@@ -93,30 +93,46 @@ does not fabricate a missing event time.
 
 The response and subsequent reads are `no-store`. Extracted events remain pending until confirmation and are excluded from calendar aggregates and analytics.
 
-### `GET /calendar?month=2026-07&mode=overview`
+### `GET /calendar?month=2026-07`
 
-Modes: `overview`, `pain`, `medication`, `activity`, `sleep`, `wellbeing`.
+Returns all day-layer aggregates for the month. Optional `layers` is informational for clients; the server always returns every available layer. Legacy `mode` is accepted as an alias and echoed but does not filter aggregates.
 
-Response contains daily aggregates only:
+Response:
 
 ```json
 {
   "month": "2026-07",
   "timezone": "Europe/Moscow",
+  "layers_available": ["pain","medication","activity","sleep","wellbeing","context","weather"],
   "days": [{
     "date": "2026-07-21",
     "has_data": true,
-    "pain": {"episodes": 1, "max_intensity": 6, "open": false},
-    "medication": {"intakes": 1},
-    "activity": {"minutes": 30},
+    "has_pending": false,
+    "pain": {"max_intensity": 6, "open": false},
+    "medication": {"intakes": 2},
+    "activity": {"minutes": 45},
     "sleep": {"minutes": 420, "quality": 6},
-    "wellbeing": {"score": 7},
+    "wellbeing": {"score": 7, "motivation": 5},
+    "context": {"period_type": "trip", "place_label": "Новосибирск", "segment": "middle"},
+    "weather": {"temp_mean_c": 18, "weather_code": 3, "pressure_delta_24h_hpa": -8, "is_complete": true},
     "pending_count": 0
   }]
 }
 ```
 
-No raw text in calendar response.
+Compact UI rules: pain shows max intensity without `/10` or episode count; medication shows intake count with pill icon only; context is a continuous ribbon; weather shows one temperature plus icon. No raw text in calendar response.
+
+### `GET /places/search?q=Липецк`
+
+Authenticated city search via configured geocoder (Open-Meteo). Returns candidate cities with label, region, country, timezone and provider IDs. Does not store a place until the user selects one.
+
+### `GET /me` / `PATCH /me`
+
+Editable settings also include `home_place_id`. Selecting a home place may queue weather enrichment for completed local days.
+
+### `GET /context-periods` / `POST /context-periods` / `PATCH /context-periods/{id}`
+
+CRUD for confirmed context periods with revision concurrency. Creating/updating a period may enqueue weather enrichment for the covered dates.
 
 ### `GET /days/{date}`
 

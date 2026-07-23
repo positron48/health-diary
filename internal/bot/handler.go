@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"health-diary/internal/auth"
+	"health-diary/internal/contextperiod"
 	"health-diary/internal/crypto"
 	"health-diary/internal/episode"
 	"health-diary/internal/ingest"
@@ -90,6 +91,11 @@ func (h *Handler) callback(ctx context.Context, api *tgbotapi.BotAPI, callback *
 	} else if parts[2] == "confirm" && userID != "" {
 		if syncErr := episode.SyncConfirmed(ctx, h.db, h.cipher, userID); syncErr != nil && h.log != nil {
 			h.log.Error("episode projection after telegram confirm failed", "error", syncErr)
+		}
+		var timezone, dayStart string
+		_ = h.db.QueryRow(ctx, `SELECT timezone,COALESCE(settings->>'day_start_time','00:00') FROM users WHERE id=$1`, userID).Scan(&timezone, &dayStart)
+		if syncErr := contextperiod.SyncConfirmed(ctx, h.db, userID, timezone, dayStart); syncErr != nil && h.log != nil {
+			h.log.Error("context projection after telegram confirm failed", "error", syncErr)
 		}
 	}
 	_, requestErr := api.Request(tgbotapi.NewCallback(callback.ID, message))

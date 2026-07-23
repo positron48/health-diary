@@ -83,9 +83,21 @@ Medication-overuse indicators are post-MVP and require medication-class normaliz
 
 ### Wellbeing
 
-- wellbeing, stress, mood and energy rolling series;
+- wellbeing, stress, mood, energy and motivation rolling series;
 - day-before/day-of headache comparison;
 - do not interpolate missing scores.
+
+### Context / travel
+
+- trip/vacation/relocation days from confirmed `context_periods`;
+- active place label per local day (period override, else home place);
+- never treat absence of a period as “stayed home historically” without an explicit home-place enrichment window.
+
+### Weather
+
+- daily temperature / pressure / humidity / precipitation bins from `daily_weather` for the active place;
+- pressure-drop and temperature-range exposures for association rules;
+- incomplete current-day rows are excluded from association denominators.
 
 ### Food/drink/measurements
 
@@ -133,14 +145,16 @@ If gates fail, return a reason such as:
 
 ## 9. Calendar aggregation
 
-Calendar response is calculated per local date and mode. Icon/color thresholds must be documented and stable:
+Calendar response returns every layer for each local date. Icon/color thresholds must be documented and stable:
 
-- pain: none / mild 1–3 / moderate 4–6 / severe 7–10 / unknown intensity;
-- medication: intake count, not “safe/unsafe” color;
-- activity: recorded duration tiers;
-- sleep/wellbeing: value plus unknown state.
+- pain: none / mild 1–3 / moderate 4–6 / severe 7–10 / unknown intensity; cell shows max intensity only;
+- medication: intake count icon, not “safe/unsafe” color;
+- activity: recorded duration tiers (`45м`);
+- sleep/wellbeing: compact value plus unknown state;
+- context: continuous ribbon across inclusive dates;
+- weather: one temperature + weather-code icon; incomplete days marked.
 
-Never color a day green merely because no entry exists.
+UI filters use multi-select `layers` (ADR-017). Never color a day green merely because no entry exists.
 
 ## 10. Doctor/export report
 

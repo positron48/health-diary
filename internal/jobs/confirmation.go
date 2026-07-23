@@ -33,6 +33,7 @@ func eventDescription(event llm.Event, loc *time.Location) string {
 		"food_drink":        "Еда или напиток",
 		"measurement":       "Измерение",
 		"note":              "Заметка",
+		"life_context":      "Контекст",
 	}[event.Kind]
 	if event.Kind == "pain_observation" && stringValue(data["symptom_type"]) == "headache" {
 		title = "Головная боль"
@@ -63,6 +64,25 @@ func eventDescription(event llm.Event, loc *time.Location) string {
 		}
 		if dose := stringValue(data["dose_value"]); dose != "" {
 			parts = append(parts, strings.TrimSpace(dose+" "+stringValue(data["dose_unit"])))
+		}
+	}
+	if event.Kind == "life_context" {
+		if periodType := contextTypeLabel(stringValue(data["period_type"])); periodType != "" {
+			parts = append(parts, periodType)
+		}
+		if place := stringValue(data["place_label"]); place != "" {
+			parts = append(parts, place)
+		}
+		if phase := stringValue(data["phase"]); phase == "return" || phase == "end" {
+			parts = append(parts, "возвращение")
+		}
+	}
+	if event.Kind == "wellbeing" {
+		if score := stringValue(data["motivation_score"]); score != "" {
+			parts = append(parts, "мотивация "+score+"/10")
+		}
+		if score := stringValue(data["energy_score"]); score != "" {
+			parts = append(parts, "энергия "+score+"/10")
 		}
 	}
 	if event.OccurredAt != "" {
@@ -132,6 +152,23 @@ func lateralityLabel(value string) string {
 		return "по центру"
 	default:
 		return ""
+	}
+}
+
+func contextTypeLabel(value string) string {
+	switch value {
+	case "vacation":
+		return "отпуск"
+	case "trip":
+		return "поездка"
+	case "temporary_stay":
+		return "временное пребывание"
+	case "relocation":
+		return "переезд"
+	case "other":
+		return "место"
+	default:
+		return value
 	}
 }
 

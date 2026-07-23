@@ -60,7 +60,8 @@ func TestCalendarDayAggregatesDeterministically(t *testing.T) {
 	day.add("pain_observation", json.RawMessage(`{"intensity":7}`))
 	day.add("activity", json.RawMessage(`{"duration_minutes":30}`))
 	day.add("activity", json.RawMessage(`{"duration_minutes":15}`))
-	if day.Pain["episodes"] != 2 || day.Pain["max_intensity"] != float64(7) || day.Activity["minutes"] != 45 {
+	day.add("wellbeing", json.RawMessage(`{"wellbeing_score":6,"motivation_score":4}`))
+	if day.Pain["max_intensity"] != float64(7) || day.Activity["minutes"] != 45 || day.Wellbeing["motivation"] != float64(4) {
 		t.Fatalf("unexpected aggregate: %#v", day)
 	}
 }

@@ -9,6 +9,7 @@ import (
 	"health-diary/internal/auth"
 	"health-diary/internal/crypto"
 	"health-diary/internal/llm"
+	"health-diary/internal/weather"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -18,13 +19,14 @@ type Worker struct {
 	queue     *Repository
 	cipher    *crypto.Cipher
 	extractor llm.Extractor
+	enricher  *weather.Enricher
 	workerID  string
 	provider  string
 	model     string
 }
 
-func NewWorker(db *pgxpool.Pool, cipher *crypto.Cipher, extractor llm.Extractor, workerID, provider, model string) *Worker {
-	return &Worker{db: db, queue: NewRepository(db), cipher: cipher, extractor: extractor, workerID: workerID, provider: provider, model: model}
+func NewWorker(db *pgxpool.Pool, cipher *crypto.Cipher, extractor llm.Extractor, workerID, provider, model string, enricher *weather.Enricher) *Worker {
+	return &Worker{db: db, queue: NewRepository(db), cipher: cipher, extractor: extractor, enricher: enricher, workerID: workerID, provider: provider, model: model}
 }
 func (w *Worker) RunOnce(ctx context.Context) error {
 	job, err := w.queue.Claim(ctx, w.workerID)
@@ -33,6 +35,9 @@ func (w *Worker) RunOnce(ctx context.Context) error {
 	}
 	if job.Kind == "delete_user" {
 		return w.deleteUser(ctx, job)
+	}
+	if job.Kind == "enrich_weather" {
+		return w.enrichWeather(ctx, job)
 	}
 	if job.Kind != "extract_entry" {
 		return w.queue.Finish(ctx, job.ID, false, "unsupported_job")
@@ -93,7 +98,8 @@ func (w *Worker) deleteUser(ctx context.Context, job *Job) error {
 	// application-held health record for the account.
 	queries := []string{
 		`DELETE FROM telegram_callback_actions WHERE user_id=$1`, `DELETE FROM outbox_messages WHERE user_id=$1`, `DELETE FROM auth_challenges WHERE user_id=$1`, `DELETE FROM web_sessions WHERE user_id=$1`,
-		`DELETE FROM event_revisions WHERE event_id IN (SELECT id FROM health_events WHERE user_id=$1)`, `DELETE FROM health_events WHERE user_id=$1`, `DELETE FROM event_batches WHERE user_id=$1`, `DELETE FROM extraction_runs WHERE entry_id IN (SELECT id FROM journal_entries WHERE user_id=$1)`, `DELETE FROM jobs WHERE kind='extract_entry' AND payload->>'entry_id' IN (SELECT id::text FROM journal_entries WHERE user_id=$1)`, `DELETE FROM journal_entries WHERE user_id=$1`, `DELETE FROM telegram_updates WHERE user_id=$1`, `DELETE FROM users WHERE id=$1 AND status='deletion_pending'`,
+		`DELETE FROM daily_weather WHERE user_id=$1`, `DELETE FROM context_periods WHERE user_id=$1`, `DELETE FROM places WHERE user_id=$1`,
+		`DELETE FROM event_revisions WHERE event_id IN (SELECT id FROM health_events WHERE user_id=$1)`, `DELETE FROM health_events WHERE user_id=$1`, `DELETE FROM event_batches WHERE user_id=$1`, `DELETE FROM extraction_runs WHERE entry_id IN (SELECT id FROM journal_entries WHERE user_id=$1)`, `DELETE FROM jobs WHERE kind IN ('extract_entry','enrich_weather') AND (payload->>'entry_id' IN (SELECT id::text FROM journal_entries WHERE user_id=$1) OR payload->>'user_id'=$1)`, `DELETE FROM journal_entries WHERE user_id=$1`, `DELETE FROM telegram_updates WHERE user_id=$1`, `DELETE FROM users WHERE id=$1 AND status='deletion_pending'`,
 	}
 	for _, query := range queries {
 		if _, err = tx.Exec(ctx, query, payload.UserID); err != nil {
@@ -110,6 +116,27 @@ func (w *Worker) deleteUser(ctx context.Context, job *Job) error {
 	_, err = w.db.Exec(ctx, `UPDATE jobs SET status='succeeded',payload='{}'::jsonb,locked_at=NULL,locked_by=NULL,last_error_code=NULL,updated_at=now() WHERE id=$1 AND status='running'`, job.ID)
 	return err
 }
+
+func (w *Worker) enrichWeather(ctx context.Context, job *Job) error {
+	if w.enricher == nil {
+		return w.queue.Finish(ctx, job.ID, false, "weather_disabled")
+	}
+	var payload struct {
+		UserID  string `json:"user_id"`
+		PlaceID string `json:"place_id"`
+		From    string `json:"from"`
+		To      string `json:"to"`
+	}
+	if err := json.Unmarshal(job.Payload, &payload); err != nil {
+		return w.queue.Finish(ctx, job.ID, false, "invalid_payload")
+	}
+	if err := w.enricher.Enrich(ctx, payload.UserID, payload.PlaceID, payload.From, payload.To); err != nil {
+		_ = w.queue.Finish(ctx, job.ID, true, "weather_fetch_failed")
+		return err
+	}
+	return w.queue.Finish(ctx, job.ID, false, "")
+}
+
 func (w *Worker) extract(ctx context.Context, entryID string, reference time.Time, attempt int) error {
 	tx, err := w.db.Begin(ctx)
 	if err != nil {
@@ -157,7 +184,11 @@ func (w *Worker) extract(ctx context.Context, entryID string, reference time.Tim
 		if err != nil {
 			return fmt.Errorf("marshal event attributes: %w", err)
 		}
-		if _, err := tx.Exec(ctx, `INSERT INTO health_events(user_id,batch_id,entry_id,kind,occurred_at,time_precision,client_ref,attributes) VALUES($1,$2,$3,$4,$5,$6,$7,$8)`, userID, batchID, entryID, event.Kind, event.OccurredAt, event.TimePrecision, event.ClientRef, attributes); err != nil {
+		var endedAt any
+		if event.EndedAt != nil && *event.EndedAt != "" {
+			endedAt = *event.EndedAt
+		}
+		if _, err := tx.Exec(ctx, `INSERT INTO health_events(user_id,batch_id,entry_id,kind,occurred_at,ended_at,time_precision,client_ref,attributes) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)`, userID, batchID, entryID, event.Kind, event.OccurredAt, endedAt, event.TimePrecision, event.ClientRef, attributes); err != nil {
 			return fmt.Errorf("insert event: %w", err)
 		}
 	}

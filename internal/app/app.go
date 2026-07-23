@@ -27,6 +27,7 @@ import (
 	"health-diary/internal/journal"
 	"health-diary/internal/llm"
 	"health-diary/internal/userday"
+	"health-diary/internal/weather"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -45,6 +46,7 @@ type App struct {
 	auth            *auth.Service
 	cipher          *crypto.Cipher
 	ingest          *ingest.Service
+	weather         *weather.Client
 	telegramWebhook http.Handler
 }
 
@@ -77,7 +79,19 @@ func (a *App) Run(ctx context.Context, shutdownTimeout time.Duration) error {
 			extractor = llm.NewOpenAICompatible(a.config.LLMBaseURL, a.config.LLMModel, a.config.LLMAPIKey, &http.Client{Timeout: 30 * time.Second})
 			provider, model = "polza", a.config.LLMModel
 		}
-		worker := jobs.NewWorker(a.db, a.cipher, extractor, "app-1", provider, model)
+		var enricher *weather.Enricher
+		if a.config.WeatherEnabled {
+			a.weather = weather.NewClient(
+				a.config.Weather.BaseURL,
+				a.config.Weather.ForecastURL,
+				a.config.Weather.GeocodingURL,
+				a.config.Weather.Provider,
+				a.config.Weather.Timeout,
+				&http.Client{Timeout: a.config.Weather.Timeout},
+			)
+			enricher = weather.NewEnricher(a.db, a.weather)
+		}
+		worker := jobs.NewWorker(a.db, a.cipher, extractor, "app-1", provider, model, enricher)
 		go func() {
 			ticker := time.NewTicker(time.Second)
 			defer ticker.Stop()
@@ -183,6 +197,11 @@ func (a *App) Handler() http.Handler {
 	mux.Handle("POST /api/v1/batches/{id}/confirm", a.requireSession(http.HandlerFunc(a.confirmBatch)))
 	mux.Handle("POST /batches/{id}/reject", a.requireSession(http.HandlerFunc(a.rejectBatch)))
 	mux.Handle("POST /api/v1/batches/{id}/reject", a.requireSession(http.HandlerFunc(a.rejectBatch)))
+	mux.Handle("GET /api/v1/places/search", a.requireSession(http.HandlerFunc(a.searchPlaces)))
+	mux.Handle("POST /api/v1/places", a.requireSession(http.HandlerFunc(a.createPlace)))
+	mux.Handle("GET /api/v1/context-periods", a.requireSession(http.HandlerFunc(a.listContextPeriods)))
+	mux.Handle("POST /api/v1/context-periods", a.requireSession(http.HandlerFunc(a.createContextPeriod)))
+	mux.Handle("PATCH /api/v1/context-periods/{id}", a.requireSession(http.HandlerFunc(a.patchContextPeriod)))
 	mux.Handle("GET /api/v1/episodes", a.requireSession(http.HandlerFunc(a.episodes)))
 	mux.Handle("GET /api/v1/episodes/{id}", a.requireSession(http.HandlerFunc(a.episodeDetail)))
 	mux.Handle("POST /api/v1/episodes/{id}/close", a.requireSession(http.HandlerFunc(a.closeEpisode)))
@@ -258,6 +277,7 @@ func (a *App) transitionBatch(w http.ResponseWriter, r *http.Request, confirmed 
 	}
 	if confirmed {
 		_ = episode.SyncConfirmed(r.Context(), a.db, a.cipher, user.ID)
+		_ = a.syncContextAndWeather(r.Context(), user)
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -330,7 +350,7 @@ func (a *App) pendingBatches(w http.ResponseWriter, r *http.Request) {
 
 func (a *App) exportEvents(w http.ResponseWriter, r *http.Request) {
 	user := r.Context().Value(sessionContextKey{}).(auth.SessionUser)
-	rows, err := a.db.Query(r.Context(), `SELECT id::text,kind,occurred_at,time_precision,attributes,revision FROM health_events WHERE user_id=$1 AND status='confirmed' AND deleted_at IS NULL ORDER BY occurred_at`, user.ID)
+	rows, err := a.db.Query(r.Context(), `SELECT id::text,kind,occurred_at,ended_at,time_precision,attributes,revision FROM health_events WHERE user_id=$1 AND status='confirmed' AND deleted_at IS NULL ORDER BY occurred_at`, user.ID)
 	if err != nil {
 		writeAPIError(w, r, 500, "internal_error", "Не удалось подготовить экспорт", nil)
 		return
@@ -340,6 +360,7 @@ func (a *App) exportEvents(w http.ResponseWriter, r *http.Request) {
 		ID            string          `json:"id"`
 		Kind          string          `json:"kind"`
 		OccurredAt    time.Time       `json:"occurred_at"`
+		EndedAt       *time.Time      `json:"ended_at,omitempty"`
 		TimePrecision string          `json:"time_precision"`
 		Attributes    json.RawMessage `json:"attributes"`
 		Revision      int             `json:"revision"`
@@ -347,27 +368,78 @@ func (a *App) exportEvents(w http.ResponseWriter, r *http.Request) {
 	items := []exportedEvent{}
 	for rows.Next() {
 		var item exportedEvent
-		if err := rows.Scan(&item.ID, &item.Kind, &item.OccurredAt, &item.TimePrecision, &item.Attributes, &item.Revision); err != nil {
+		if err := rows.Scan(&item.ID, &item.Kind, &item.OccurredAt, &item.EndedAt, &item.TimePrecision, &item.Attributes, &item.Revision); err != nil {
 			writeAPIError(w, r, 500, "internal_error", "Не удалось подготовить экспорт", nil)
 			return
 		}
 		items = append(items, item)
+	}
+	periods := []map[string]any{}
+	periodRows, _ := a.db.Query(r.Context(), `SELECT id::text,period_type,COALESCE(place_label,''),started_on,ended_on,status FROM context_periods WHERE user_id=$1 AND status<>'cancelled' ORDER BY started_on`, user.ID)
+	if periodRows != nil {
+		defer periodRows.Close()
+		for periodRows.Next() {
+			var id, periodType, placeLabel, status string
+			var started time.Time
+			var ended *time.Time
+			if periodRows.Scan(&id, &periodType, &placeLabel, &started, &ended, &status) != nil {
+				continue
+			}
+			item := map[string]any{"id": id, "period_type": periodType, "place_label": placeLabel, "started_on": started.Format("2006-01-02"), "status": status}
+			if ended != nil {
+				item["ended_on"] = ended.Format("2006-01-02")
+			}
+			periods = append(periods, item)
+		}
+	}
+	weatherItems := []map[string]any{}
+	weatherRows, _ := a.db.Query(r.Context(), `SELECT place_id::text,local_date,temp_mean_c,pressure_mean_hpa,pressure_delta_24h_hpa,humidity_mean_pct,precipitation_mm,weather_code,is_complete
+		FROM daily_weather WHERE user_id=$1 ORDER BY local_date`, user.ID)
+	if weatherRows != nil {
+		defer weatherRows.Close()
+		for weatherRows.Next() {
+			var placeID string
+			var localDate time.Time
+			var temp, pressure, delta, humidity, precip *float64
+			var code *int
+			var complete bool
+			if weatherRows.Scan(&placeID, &localDate, &temp, &pressure, &delta, &humidity, &precip, &code, &complete) != nil {
+				continue
+			}
+			weatherItems = append(weatherItems, map[string]any{
+				"place_id": placeID, "local_date": localDate.Format("2006-01-02"), "temp_mean_c": temp,
+				"pressure_mean_hpa": pressure, "pressure_delta_24h_hpa": delta, "humidity_mean_pct": humidity,
+				"precipitation_mm": precip, "weather_code": code, "is_complete": complete,
+			})
+		}
 	}
 	w.Header().Set("Cache-Control", "no-store")
 	if strings.EqualFold(r.URL.Query().Get("format"), "csv") {
 		w.Header().Set("Content-Type", "text/csv; charset=utf-8")
 		w.Header().Set("Content-Disposition", `attachment; filename="health-diary-events.csv"`)
 		writer := csv.NewWriter(w)
-		_ = writer.Write([]string{"id", "kind", "occurred_at", "time_precision", "attributes", "revision"})
+		_ = writer.Write([]string{"id", "kind", "occurred_at", "ended_at", "time_precision", "attributes", "revision"})
 		for _, item := range items {
-			_ = writer.Write([]string{item.ID, item.Kind, item.OccurredAt.UTC().Format(time.RFC3339), item.TimePrecision, string(item.Attributes), strconv.Itoa(item.Revision)})
+			ended := ""
+			if item.EndedAt != nil {
+				ended = item.EndedAt.UTC().Format(time.RFC3339)
+			}
+			_ = writer.Write([]string{item.ID, item.Kind, item.OccurredAt.UTC().Format(time.RFC3339), ended, item.TimePrecision, string(item.Attributes), strconv.Itoa(item.Revision)})
 		}
 		writer.Flush()
 		return
 	}
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.Header().Set("Content-Disposition", `attachment; filename="health-diary-events.json"`)
-	_ = json.NewEncoder(w).Encode(map[string]any{"schema_version": "health-diary-export-v1", "generated_at": time.Now().UTC(), "timezone": user.Timezone, "events": items})
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"schema_version":  "health-diary-export-v2",
+		"generated_at":    time.Now().UTC(),
+		"timezone":        user.Timezone,
+		"events":          items,
+		"context_periods": periods,
+		"daily_weather":   weatherItems,
+		"attribution":     "Weather data by Open-Meteo.com (CC BY 4.0)",
+	})
 }
 
 func (a *App) deleteEvent(w http.ResponseWriter, r *http.Request)  { a.mutateDeletion(w, r, true) }

@@ -1,4 +1,4 @@
-export type EventKind = 'pain' | 'pain_observation' | 'medication_intake' | 'wellbeing' | 'activity' | 'sleep' | 'food_drink' | 'measurement' | 'note'
+export type EventKind = 'pain' | 'pain_observation' | 'medication_intake' | 'wellbeing' | 'activity' | 'sleep' | 'food_drink' | 'measurement' | 'note' | 'life_context'
 export type Precision = 'exact' | 'approximate' | 'unknown' | 'date_only' | 'inferred_from_message'
 
 export interface HealthEvent {
@@ -24,7 +24,7 @@ export interface PendingBatch {
   message_at?: string
   events: HealthEvent[]
 }
-export interface UserSettings { day_start_time?: string }
+export interface UserSettings { day_start_time?: string; home_place_id?: string }
 export interface Session {
   id: string
   timezone: string
@@ -35,12 +35,25 @@ export interface Session {
   expires_at?: string
 }
 export interface CalendarDay {
-  date: string; has_data: boolean; pending_count?: number
-  pain?: { episodes: number; max_intensity: number | null; open?: boolean }
-  medication?: { intakes: number }; activity?: { minutes: number | null }
-  sleep?: { minutes: number | null; quality: number | null }; wellbeing?: { score: number | null }
+  date: string
+  has_data: boolean
+  has_pending?: boolean
+  pending_count?: number
+  pain?: { max_intensity?: number | null; open?: boolean; episodes?: number }
+  medication?: { intakes: number }
+  activity?: { minutes: number | null }
+  sleep?: { minutes: number | null; quality: number | null }
+  wellbeing?: { score?: number | null; motivation?: number | null; energy?: number | null }
+  context?: { period_type: string; place_label?: string; segment?: 'start' | 'middle' | 'end' }
+  weather?: { temp_mean_c?: number | null; weather_code?: number | null; pressure_delta_24h_hpa?: number | null; is_complete?: boolean }
 }
-export interface CalendarResponse { month: string; timezone: string; days: CalendarDay[]; mode?: string }
+export interface CalendarResponse {
+  month: string
+  timezone: string
+  days: CalendarDay[]
+  layers_available?: string[]
+  mode?: string
+}
 export interface DayResponse { date: string; events: HealthEvent[]; pending_count?: number; episodes?: Episode[] }
 export interface Episode { id: string; status: 'open' | 'closed'; started_at: string; ended_at?: string | null; time_precision?: Precision; duration_minutes?: number | null; max_intensity?: number | null; observation_count?: number; events?: HealthEvent[]; revision: number }
 export interface AnalyticsSummary {

@@ -131,6 +131,69 @@ Kinds:
 - `food_drink`
 - `measurement`
 - `note`
+- `life_context`
+
+### `places`
+
+City-level geography only (ADR-016). No street addresses.
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | uuid PK | |
+| `user_id` | uuid FK nullable | NULL for shared catalog seeds; user-created places scoped |
+| `label` | text | Display name, e.g. `Липецк` |
+| `region` | text nullable | Admin1 / region |
+| `country_code` | text | ISO-3166-1 alpha-2 |
+| `timezone` | text | IANA |
+| `provider` | text | e.g. `open-meteo` |
+| `provider_place_id` | text | External ID |
+| `latitude` | numeric(9,6) | City-center only |
+| `longitude` | numeric(9,6) | City-center only |
+| `created_at` | timestamptz | |
+
+Unique `(provider, provider_place_id)` and partial unique `(user_id, lower(label))` where user_id is not null.
+
+### `context_periods`
+
+Inclusive local-date intervals for vacation/trip/relocation.
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | uuid PK | |
+| `user_id` | uuid FK | |
+| `period_type` | text | `vacation`, `trip`, `temporary_stay`, `relocation`, `other` |
+| `place_id` | uuid FK nullable | Active city during the period |
+| `place_label` | text nullable | Snapshot label if place unresolved |
+| `started_on` | date | Inclusive local date |
+| `ended_on` | date nullable | Inclusive; NULL = open |
+| `status` | text | `open`, `closed`, `cancelled` |
+| `source_entry_id` | uuid nullable FK | |
+| `created_from_event_id` | uuid nullable FK | |
+| `revision` | int | |
+| `created_at`, `updated_at` | timestamptz | |
+
+CHECK: `ended_on IS NULL OR ended_on >= started_on`.
+
+### `daily_weather`
+
+System-sourced, auto-confirmed daily observations for a place.
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | uuid PK | |
+| `user_id` | uuid FK | Owner who requested enrichment |
+| `place_id` | uuid FK | |
+| `local_date` | date | |
+| `provider` | text | `open-meteo` |
+| `temp_min_c`, `temp_max_c`, `temp_mean_c` | numeric nullable | |
+| `pressure_mean_hpa` | numeric nullable | |
+| `pressure_delta_24h_hpa` | numeric nullable | vs previous local day |
+| `humidity_mean_pct` | numeric nullable | |
+| `precipitation_mm` | numeric nullable | |
+| `weather_code` | int nullable | WMO weather interpretation code |
+| `is_complete` | boolean | false for current incomplete day |
+| `fetched_at` | timestamptz | |
+| UNIQUE | `(place_id, local_date, provider)` | Idempotent upsert |
 
 ### `event_revisions`
 
@@ -206,8 +269,10 @@ Medication normalization is a user-editable catalog mapping, not an LLM-only tru
 ### `daily_checkins`
 
 - `event_id`
-- `wellbeing_score`, `energy_score`, `mood_score`, `stress_score`, `sleep_quality`: nullable `0..10`
+- `wellbeing_score`, `energy_score`, `mood_score`, `stress_score`, `motivation_score`, `sleep_quality`: nullable `0..10`
 - `explicit_no_headache` nullable boolean
+
+`energy_score` is physical energy; `motivation_score` is desire to do things. Missing scores stay `NULL`.
 
 ### `sleep_records`
 

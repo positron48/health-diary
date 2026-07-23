@@ -1,4 +1,4 @@
-import { Activity, Bed, CircleGauge, Coffee, FileText, HeartPulse, Pill, Smile } from '@lucide/vue'
+import { Activity, Bed, CircleGauge, Coffee, FileText, HeartPulse, MapPin, Pill, Smile } from '@lucide/vue'
 import type { Component } from 'vue'
 import type { HealthEvent } from '../../api/types'
 
@@ -116,7 +116,22 @@ export const eventRegistry: Record<string, Descriptor> = {
     fields: [
       { key: 'wellbeing_score', label: 'Оценка', format: score },
       { key: 'score', label: 'Оценка', format: score },
+      { key: 'energy_score', label: 'Энергия', format: score },
+      { key: 'motivation_score', label: 'Мотивация', format: score },
+      { key: 'mood_score', label: 'Настроение', format: score },
+      { key: 'stress_score', label: 'Стресс', format: score },
       { key: 'note', label: 'Комментарий' },
+    ],
+  },
+  life_context: {
+    label: 'Контекст',
+    icon: MapPin,
+    tone: 'context',
+    fields: [
+      { key: 'period_type', label: 'Тип' },
+      { key: 'place_label', label: 'Город' },
+      { key: 'phase', label: 'Фаза' },
+      { key: 'ended_on', label: 'До' },
     ],
   },
   food_drink: {

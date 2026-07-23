@@ -8,12 +8,16 @@ import (
 
 var allowedKinds = map[string]bool{
 	"pain_observation": true, "medication_intake": true, "wellbeing": true, "activity": true,
-	"sleep": true, "food_drink": true, "measurement": true, "note": true,
+	"sleep": true, "food_drink": true, "measurement": true, "note": true, "life_context": true,
 }
 var allowedPrecisions = map[string]bool{
 	"exact": true, "approximate": true, "date_only": true, "inferred_from_message": true,
 }
 var allowedPhases = map[string]bool{"start": true, "update": true, "end": true}
+var allowedContextPhases = map[string]bool{"start": true, "update": true, "end": true, "return": true}
+var allowedContextTypes = map[string]bool{
+	"vacation": true, "trip": true, "temporary_stay": true, "relocation": true, "other": true,
+}
 var allowedLaterality = map[string]bool{
 	"left": true, "right": true, "bilateral": true, "center": true, "unknown": true,
 }
@@ -42,6 +46,11 @@ func ValidateResult(result Result) error {
 		}
 		if _, err := time.Parse(time.RFC3339, event.OccurredAt); err != nil {
 			return fmt.Errorf("event %d has invalid occurred_at", index)
+		}
+		if event.EndedAt != nil && *event.EndedAt != "" {
+			if _, err := time.Parse(time.RFC3339, *event.EndedAt); err != nil {
+				return fmt.Errorf("event %d has invalid ended_at", index)
+			}
 		}
 		if event.Data == nil {
 			return fmt.Errorf("event %d has no data object", index)
@@ -80,6 +89,18 @@ func NormalizeTimes(result *Result, timezone string, reference time.Time) error 
 			}
 		}
 		result.Events[index].OccurredAt = parsed.UTC().Format(time.RFC3339)
+		if result.Events[index].EndedAt != nil && *result.Events[index].EndedAt != "" {
+			rawEnd := *result.Events[index].EndedAt
+			parsedEnd, err := time.Parse(time.RFC3339, rawEnd)
+			if err != nil {
+				return fmt.Errorf("event %d has invalid ended_at", index)
+			}
+			if strings.HasSuffix(strings.ToUpper(rawEnd), "Z") && loc != time.UTC {
+				parsedEnd = time.Date(parsedEnd.Year(), parsedEnd.Month(), parsedEnd.Day(), parsedEnd.Hour(), parsedEnd.Minute(), parsedEnd.Second(), parsedEnd.Nanosecond(), loc)
+			}
+			formatted := parsedEnd.UTC().Format(time.RFC3339)
+			result.Events[index].EndedAt = &formatted
+		}
 	}
 	return nil
 }
@@ -131,6 +152,38 @@ func validateEventData(kind string, data map[string]any) error {
 		}
 		if err := checkOptionalIntRange(data, "effect_rating", -2, 2); err != nil {
 			return err
+		}
+	case "wellbeing":
+		for _, key := range []string{"wellbeing_score", "energy_score", "mood_score", "stress_score", "motivation_score", "sleep_quality"} {
+			if err := checkOptionalIntRange(data, key, 0, 10); err != nil {
+				return err
+			}
+		}
+	case "life_context":
+		periodType, _ := data["period_type"].(string)
+		if periodType == "" || !allowedContextTypes[periodType] {
+			return fmt.Errorf("period_type must be vacation, trip, temporary_stay, relocation or other")
+		}
+		if phase, ok := data["phase"]; ok && phase != nil {
+			text, ok := phase.(string)
+			if !ok || !allowedContextPhases[text] {
+				return fmt.Errorf("phase must be start, update, end or return")
+			}
+		}
+		if label, ok := data["place_label"]; ok && label != nil {
+			text, ok := label.(string)
+			if !ok || len([]rune(text)) > 120 {
+				return fmt.Errorf("place_label must be a short string")
+			}
+		}
+		if endedOn, ok := data["ended_on"]; ok && endedOn != nil {
+			text, ok := endedOn.(string)
+			if !ok {
+				return fmt.Errorf("ended_on must be YYYY-MM-DD")
+			}
+			if _, err := time.Parse("2006-01-02", text); err != nil {
+				return fmt.Errorf("ended_on must be YYYY-MM-DD")
+			}
 		}
 	}
 	return nil

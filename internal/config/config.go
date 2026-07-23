@@ -25,6 +25,19 @@ type Config struct {
 	AuthMaxAttempts          int
 	SessionTTL               time.Duration
 	SessionCookieName        string
+	ContextEnabled           bool
+	WeatherEnabled           bool
+	WeatherAssociations      bool
+	Weather                  WeatherConfig
+}
+
+type WeatherConfig struct {
+	Provider     string
+	BaseURL      string
+	ForecastURL  string
+	GeocodingURL string
+	Timeout      time.Duration
+	SOCKS5Proxy  string
 }
 
 type TelegramConfig struct {
@@ -47,14 +60,25 @@ func Load() (Config, error) {
 		DataEncryptionKeyVersion: intValue("DATA_ENCRYPTION_KEY_VERSION", 1),
 		// One initial extraction plus one retry keeps user feedback timely while
 		// retaining the encrypted entry for an explicit later retry.
-		JobMaxAttempts:    intValue("JOB_MAX_ATTEMPTS", 2),
-		LLMBaseURL:        value("LLM_BASE_URL", "https://api.polza.ai/api/v1"),
-		LLMAPIKey:         value("LLM_API_KEY", ""),
-		LLMModel:          value("LLM_MODEL", "openai/gpt-5.4-nano"),
-		AuthCodeTTL:       durationValue("AUTH_CODE_TTL", 5*time.Minute),
-		AuthMaxAttempts:   intValue("AUTH_MAX_ATTEMPTS", 5),
-		SessionTTL:        durationValue("SESSION_TTL", 30*24*time.Hour),
-		SessionCookieName: value("SESSION_COOKIE_NAME", "health_diary_session"),
+		JobMaxAttempts:      intValue("JOB_MAX_ATTEMPTS", 2),
+		LLMBaseURL:          value("LLM_BASE_URL", "https://api.polza.ai/api/v1"),
+		LLMAPIKey:           value("LLM_API_KEY", ""),
+		LLMModel:            value("LLM_MODEL", "openai/gpt-5.4-nano"),
+		AuthCodeTTL:         durationValue("AUTH_CODE_TTL", 5*time.Minute),
+		AuthMaxAttempts:     intValue("AUTH_MAX_ATTEMPTS", 5),
+		SessionTTL:          durationValue("SESSION_TTL", 30*24*time.Hour),
+		SessionCookieName:   value("SESSION_COOKIE_NAME", "health_diary_session"),
+		ContextEnabled:      boolValue("CONTEXT_ENABLED", true),
+		WeatherEnabled:      boolValue("WEATHER_ENABLED", true),
+		WeatherAssociations: boolValue("WEATHER_ASSOCIATIONS_ENABLED", true),
+		Weather: WeatherConfig{
+			Provider:     value("WEATHER_PROVIDER", "open-meteo"),
+			BaseURL:      value("WEATHER_BASE_URL", "https://archive-api.open-meteo.com"),
+			ForecastURL:  value("WEATHER_FORECAST_URL", "https://api.open-meteo.com"),
+			GeocodingURL: value("WEATHER_GEOCODING_URL", "https://geocoding-api.open-meteo.com"),
+			Timeout:      durationValue("WEATHER_TIMEOUT", 15*time.Second),
+			SOCKS5Proxy:  value("WEATHER_SOCKS5_PROXY", ""),
+		},
 	}
 	if cfg.HTTPAddr == "" {
 		return Config{}, fmt.Errorf("HTTP_ADDR must not be empty")
@@ -83,6 +107,14 @@ func Load() (Config, error) {
 	}
 	cfg.Telegram.AllowedUserIDs = allowed
 	return cfg, nil
+}
+
+func boolValue(key string, fallback bool) bool {
+	raw := strings.ToLower(value(key, ""))
+	if raw == "" {
+		return fallback
+	}
+	return raw == "1" || raw == "true" || raw == "yes" || raw == "on"
 }
 
 func intValue(key string, fallback int) int {

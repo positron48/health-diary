@@ -195,8 +195,12 @@ Non-secret ConfigMap:
 - bot mode/username/webhook URL;
 - auth/session TTLs;
 - LLM base URL/model/timeouts/provider-scoped proxy;
+- `CONTEXT_ENABLED`, `WEATHER_ENABLED`, `WEATHER_ASSOCIATIONS_ENABLED`;
+- `WEATHER_PROVIDER`, `WEATHER_BASE_URL`, `WEATHER_GEOCODING_URL`, `WEATHER_TIMEOUT`, `WEATHER_SOCKS5_PROXY`;
 - retention flags;
 - metrics/job configuration.
+
+Weather metrics may include `provider`, `status`, `duration` and `error_category` only — never city names, coordinates or user IDs as labels. Open-Meteo attribution (CC BY 4.0) must remain visible in privacy/settings UI.
 
 Production currently uses `TELEGRAM_MODE=long_polling` through the dedicated
 `TELEGRAM_SOCKS5_PROXY_ADDR`. The app clears any previously registered webhook

@@ -14,6 +14,7 @@ flowchart LR
     T --> A[Health Diary app]
     A --> DB[(PostgreSQL/PVC)]
     A --> L[LLM provider]
+    A --> W[Weather/geocoder provider]
     A --> B[Encrypted backup target]
     U --> I[Traefik/HTTPS]
     I --> A
@@ -24,6 +25,8 @@ Important facts to show in `/privacy` and product settings:
 - Bot private messages are Telegram cloud chats, not Secret Chats with end-to-end encryption.
 - Interacting with a third-party bot sends data to the bot developer/service.
 - Selected LLM provider receives the minimum diary text required for extraction.
+- Weather provider (Open-Meteo) receives only city-center coordinates and dates — never diary text, Telegram IDs or session data.
+- Places are city-level only; GPS, street addresses and continuous tracking are out of scope (ADR-016).
 
 Telegram sources:
 
@@ -43,6 +46,7 @@ Protect against:
 - database/PVC/backup disclosure;
 - raw health content in logs/traces/metrics;
 - LLM provider retention or prompt injection;
+- weather/geocoder request logging that would re-identify places with user IDs;
 - malicious diary text causing tool/system instructions;
 - dependency/container vulnerabilities;
 - accidental destructive migrations or incomplete deletion.

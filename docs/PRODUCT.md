@@ -54,23 +54,26 @@ The primary initial use case is understanding headache episodes:
 
 - `pain` / headache episode start, update and end;
 - `medication_intake`;
-- `wellbeing`;
+- `wellbeing` (including optional `energy_score`, `mood_score`, `stress_score`, `motivation_score`);
 - `activity`;
 - `sleep`;
 - `food_drink`;
 - `measurement`;
-- `note`.
+- `note`;
+- `life_context` (vacation, trip, temporary stay, relocation, return home).
 
-Headache-specific fields include intensity `0..10`, location, laterality, quality, associated symptoms and functional impact. All fields except event type and event time may be unknown.
+Headache-specific fields include intensity `0..10`, location, laterality, quality, associated symptoms and functional impact. All fields except event type and event time may be unknown. `life_context` creates/updates confirmed `context_periods` after batch confirmation.
 
 ### 4.3 Web
 
 - Telegram-code authentication.
-- Month calendar with modes: overview, pain, medication, activity, sleep, wellbeing.
+- Month calendar with multi-select layers: pain, medication, activity, sleep, wellbeing, context, weather on one grid.
+- Compact day signals (icon + short metric) and continuous context ribbons for trips/vacations.
 - Day timeline with raw-source link and edit/delete controls.
 - Free-form web capture from calendar/day views through the same extraction and confirmation flow as Telegram.
+- Home city and confirmed trip/vacation/relocation periods (city-level only).
 - Episode detail with observations, related medication and duration.
-- Basic 7/30/60/90-day summary.
+- Basic 7/30/60/90-day summary including energy/motivation and weather exposures when enabled.
 - Explicit pending/unconfirmed items inbox.
 - CSV/JSON export.
 
@@ -87,14 +90,14 @@ Headache-specific fields include intensity `0..10`, location, laterality, qualit
 
 - Voice transcription, photos and documents.
 - Apple Health, Health Connect or wearable synchronization.
-- Weather/location enrichment.
+- Browser GPS, street addresses or continuous location tracking.
 - Predictive alerts.
 - Public registration or clinician accounts.
 - Shared report links.
 - Automated diagnosis, triage, medication advice or treatment changes.
 - Native iOS/Android applications.
 
-These are candidates for later phases, not hidden MVP requirements.
+City-level places, context periods and Open-Meteo weather enrichment are in scope for the unified calendar release (ADR-016/017). GPS-based location remains out of scope.
 
 ## 6. Primary journeys
 

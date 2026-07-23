@@ -101,6 +101,18 @@ This is a lightweight ADR registry. Update status and rationale before changing 
 - Constraint: send only the diary text and the minimal de-identified extraction context; never send Telegram identity, username, chat/message IDs, IP or session data. The adapter remains replaceable.
 - Reason: matches the neighbouring English project production model/provider choice while retaining provider isolation and strict schema validation.
 
+### ADR-016: City-only location and auto-confirmed weather
+
+- Status: accepted
+- Decision: geography is city-level only. The user picks a home city (default Липецк) and may declare trip/vacation/relocation periods that override the active city for inclusive local dates. Browser GPS, addresses and continuous tracking are forbidden. Weather enrichment uses Open-Meteo (geocoding + archive/forecast) with CC BY 4.0 attribution; requests send only city-center coordinates computed in memory. Stored place rows keep city label, region, IANA timezone, provider place ID and center coordinates for repeatable fetches. Daily weather rows are system-sourced and auto-confirmed (`status='confirmed'`) without a Telegram confirmation batch. Context periods extracted by LLM remain pending until the user confirms the batch. Historical weather backfill runs only for confirmed presence periods and the configured home city going forward — never invent “always home”. Feature flags `CONTEXT_ENABLED`, `WEATHER_ENABLED`, `WEATHER_ASSOCIATIONS_ENABLED` allow emergency disable without deleting stored data.
+- Reason: enables calendar context and weather associations while keeping a clear privacy boundary and avoiding GPS/address retention.
+
+### ADR-017: Unified calendar layers instead of exclusive modes
+
+- Status: accepted
+- Decision: `GET /api/v1/calendar` returns all day-layer aggregates in one response. The web UI uses multi-select `?layers=` filters (pain, medication, activity, sleep, wellbeing, context, weather) instead of exclusive `mode` tabs. Compact day cells show icon + short metric only; color is a segmented stripe per present layer. Query param `mode` remains accepted as a temporary alias that maps to a single layer for old bookmarks.
+- Reason: the product goal is cross-signal visual review (pain vs medication vs travel vs weather) on one month grid without visual noise or refetch on filter changes.
+
 ## Deferred
 
 ### ADR-D02: Production domain

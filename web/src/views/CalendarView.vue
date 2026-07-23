@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Activity, Bed, ChevronLeft, ChevronRight, HeartPulse, Pill, Smile } from '@lucide/vue'
-import { calendarApi, type CalendarMode } from '../api/calendar'
+import { Activity, Bed, CloudSun, HeartPulse, MapPin, Pill, Smile, ChevronLeft, ChevronRight } from '@lucide/vue'
+import { calendarApi, type CalendarLayer } from '../api/calendar'
 import { journalApi } from '../api/journal'
 import type { CalendarDay } from '../api/types'
 import { useAsyncState } from '../composables/useAsyncState'
@@ -14,11 +14,28 @@ import EventCard from '../features/events/EventCard.vue'
 const route = useRoute(), router = useRouter(), session = useSession()
 const currentDate = session.user.value?.current_local_date || userDate(new Date(), session.user.value?.timezone || 'Europe/Moscow', session.user.value?.settings?.day_start_time)
 const fallbackMonth = currentDate.slice(0, 7)
-const modes: Array<[CalendarMode, string]> = [['overview', 'Обзор'], ['pain', 'Боль'], ['medication', 'Лекарства'], ['activity', 'Активность'], ['sleep', 'Сон'], ['wellbeing', 'Самочувствие']]
+const allLayers: Array<[CalendarLayer, string]> = [
+  ['pain', 'Боль'],
+  ['medication', 'Лекарства'],
+  ['activity', 'Активность'],
+  ['sleep', 'Сон'],
+  ['wellbeing', 'Самочувствие'],
+  ['context', 'Контекст'],
+  ['weather', 'Погода'],
+]
+const defaultLayers: CalendarLayer[] = ['pain', 'medication', 'activity', 'sleep', 'wellbeing', 'context', 'weather']
 const month = computed(() => String(route.params.month || fallbackMonth))
-const mode = computed(() => (route.query.mode || 'overview') as CalendarMode)
+const layers = computed<CalendarLayer[]>(() => {
+  const raw = String(route.query.layers || '')
+  if (!raw) {
+    const legacy = String(route.query.mode || '')
+    if (legacy && legacy !== 'overview' && defaultLayers.includes(legacy as CalendarLayer)) return [legacy as CalendarLayer]
+    return defaultLayers
+  }
+  return raw.split(',').map((item) => item.trim()).filter((item): item is CalendarLayer => defaultLayers.includes(item as CalendarLayer))
+})
 const selected = computed(() => String(route.query.day || ''))
-const { data, loading, error, load } = useAsyncState(() => calendarApi.month(month.value, mode.value))
+const { data, loading, error, load } = useAsyncState(() => calendarApi.month(month.value))
 const preview = useAsyncState(() => journalApi.dayPreview(selected.value))
 
 const cells = computed(() => {
@@ -30,41 +47,72 @@ const cells = computed(() => {
   return [...Array(blanks).fill(null), ...Array.from({ length: days }, (_, i) => map.get(`${month.value}-${String(i + 1).padStart(2, '0')}`) || { date: `${month.value}-${String(i + 1).padStart(2, '0')}`, has_data: false })]
 })
 
-type Signal = { key: string; icon: typeof HeartPulse; label: string; tone: string }
+type Signal = { key: CalendarLayer; icon: typeof HeartPulse; label: string; tone: string }
+
+function active(layer: CalendarLayer) {
+  return layers.value.includes(layer)
+}
 
 function signals(day: CalendarDay): Signal[] {
   const items: Signal[] = []
-  if (day.pain?.episodes) items.push({ key: 'pain', icon: HeartPulse, label: `${day.pain.episodes} эп. · ${day.pain.max_intensity ?? '?'}/10`, tone: 'pain' })
-  if (day.medication?.intakes) items.push({ key: 'medication', icon: Pill, label: `${day.medication.intakes} приём.`, tone: 'medication' })
-  if (day.activity?.minutes != null) items.push({ key: 'activity', icon: Activity, label: `${day.activity.minutes} мин`, tone: 'activity' })
-  if (day.sleep?.minutes != null) items.push({ key: 'sleep', icon: Bed, label: `${Math.round(day.sleep.minutes / 60)} ч`, tone: 'sleep' })
-  if (day.wellbeing?.score != null) items.push({ key: 'wellbeing', icon: Smile, label: `${day.wellbeing.score}/10`, tone: 'wellbeing' })
+  if (active('pain') && day.pain && (day.pain.max_intensity != null || day.pain.open)) {
+    items.push({ key: 'pain', icon: HeartPulse, label: day.pain.max_intensity == null ? '?' : String(day.pain.max_intensity), tone: 'pain' })
+  }
+  if (active('medication') && day.medication?.intakes) {
+    items.push({ key: 'medication', icon: Pill, label: String(day.medication.intakes), tone: 'medication' })
+  }
+  if (active('activity') && day.activity?.minutes != null) {
+    items.push({ key: 'activity', icon: Activity, label: `${day.activity.minutes}м`, tone: 'activity' })
+  }
+  if (active('sleep') && day.sleep?.minutes != null) {
+    items.push({ key: 'sleep', icon: Bed, label: `${Math.round(Number(day.sleep.minutes) / 60)}ч`, tone: 'sleep' })
+  }
+  if (active('wellbeing') && (day.wellbeing?.score != null || day.wellbeing?.motivation != null)) {
+    const score = day.wellbeing?.motivation ?? day.wellbeing?.score
+    items.push({ key: 'wellbeing', icon: Smile, label: String(score), tone: 'wellbeing' })
+  }
+  if (active('weather') && day.weather?.temp_mean_c != null) {
+    items.push({ key: 'weather', icon: CloudSun, label: `${Math.round(Number(day.weather.temp_mean_c))}°`, tone: 'weather' })
+  }
   return items
 }
 
+function stripeLayers(day: CalendarDay) {
+  const tones: string[] = []
+  if (active('pain') && day.pain) tones.push('pain')
+  if (active('medication') && day.medication?.intakes) tones.push('medication')
+  if (active('activity') && day.activity?.minutes != null) tones.push('activity')
+  if (active('sleep') && day.sleep?.minutes != null) tones.push('sleep')
+  if (active('wellbeing') && (day.wellbeing?.score != null || day.wellbeing?.motivation != null)) tones.push('wellbeing')
+  if (active('weather') && day.weather) tones.push('weather')
+  if (active('context') && day.context) tones.push('context')
+  return tones.slice(0, 4)
+}
+
 function metric(day: CalendarDay) {
-  if (!day.has_data) return 'Нет записей'
-  if (mode.value === 'pain') return `${day.pain?.episodes ?? 0} эп. · ${day.pain?.max_intensity ?? '?'}/10`
-  if (mode.value === 'medication') return `${day.medication?.intakes ?? 0} приём.`
-  if (mode.value === 'activity') return day.activity?.minutes == null ? 'Время не указано' : `${day.activity.minutes} мин`
-  if (mode.value === 'sleep') return day.sleep?.minutes == null ? 'Сон: нет данных' : `${Math.round(day.sleep.minutes / 60)} ч`
-  if (mode.value === 'wellbeing') return day.wellbeing?.score == null ? 'Оценка не указана' : `${day.wellbeing.score}/10`
+  if (!day.has_data && !day.has_pending) return 'Нет записей'
   const all = signals(day)
-  if (!all.length) return 'Есть запись'
-  return all.map((item) => item.label).join(' · ')
+  const context = active('context') && day.context ? `${day.context.place_label || day.context.period_type}` : ''
+  return [context, ...all.map((item) => item.label)].filter(Boolean).join(' · ') || 'Есть запись'
 }
 
 function visibleSignals(day: CalendarDay) {
   const all = signals(day)
-  if (mode.value === 'overview') return { shown: all.slice(0, 2), overflow: Math.max(0, all.length - 2) }
-  const focused = all.filter((item) => item.key === mode.value || (mode.value === 'pain' && item.key === 'pain'))
-  return { shown: focused.slice(0, 2), overflow: Math.max(0, focused.length - 2) }
+  return { shown: all.slice(0, 3), overflow: Math.max(0, all.length - 3) }
 }
 
-function toneClass(day: CalendarDay) {
-  if (!day.has_data) return ''
-  if (mode.value === 'overview') return day.pain?.episodes ? 'tone-pain' : day.medication?.intakes ? 'tone-medication' : ''
-  return `tone-${mode.value}`
+function toggleLayer(layer: CalendarLayer) {
+  const next = new Set(layers.value)
+  if (next.has(layer)) next.delete(layer)
+  else next.add(layer)
+  const value = [...next]
+  router.replace({
+    query: {
+      ...route.query,
+      mode: undefined,
+      layers: value.length ? value.join(',') : undefined,
+    },
+  })
 }
 
 function move(delta: number) {
@@ -75,10 +123,10 @@ function move(delta: number) {
 }
 
 function goToday() {
-  router.push({ path: `/calendar/${fallbackMonth}`, query: { mode: mode.value, day: currentDate } })
+  router.push({ path: `/calendar/${fallbackMonth}`, query: { layers: layers.value.join(','), day: currentDate } })
 }
 
-watch([month, mode], () => load())
+watch(month, () => load())
 watch(selected, (date) => { if (date) preview.load() })
 onMounted(() => load())
 onMounted(() => { if (selected.value) preview.load() })
@@ -96,9 +144,20 @@ onMounted(() => { if (selected.value) preview.load() })
         <button class="button button--secondary icon-nav" aria-label="Следующий месяц" @click="move(1)"><ChevronRight :size="18" /></button>
       </div>
     </header>
-    <div class="segmented" aria-label="Режим календаря">
-      <button v-for="[key, label] in modes" :key="key" :class="{ active: mode === key }" @click="$router.replace({ query: { ...$route.query, mode: key } })">{{ label }}</button>
+    <div class="layer-filters" aria-label="Слои календаря">
+      <button
+        v-for="[key, label] in allLayers"
+        :key="key"
+        type="button"
+        class="layer-chip"
+        :class="{ active: active(key), [`tone-${key}`]: true }"
+        :aria-pressed="active(key)"
+        @click="toggleLayer(key)"
+      >
+        {{ label }}
+      </button>
     </div>
+    <p class="legend muted">Иконка + короткое число; цветные полоски = типы записей. Погода: Open-Meteo.</p>
     <StatePanel v-if="loading" kind="loading" />
     <StatePanel v-else-if="error" kind="error" :message="error" @retry="load()" />
     <div v-else class="month-grid">
@@ -107,11 +166,18 @@ onMounted(() => { if (selected.value) preview.load() })
         <span v-if="!day" />
         <button
           v-else
-          :class="['day-cell', toneClass(day), { selected: selected === day.date, empty: !day.has_data }]"
+          :class="['day-cell', { selected: selected === day.date, empty: !day.has_data }]"
           :aria-label="`${day.date}: ${metric(day)}`"
           @click="$router.replace({ query: { ...$route.query, day: day.date } })"
         >
+          <span v-if="stripeLayers(day).length" class="stripes" aria-hidden="true">
+            <i v-for="tone in stripeLayers(day)" :key="tone" :class="`stripe tone-${tone}`" />
+          </span>
           <strong>{{ Number(day.date.slice(-2)) }}</strong>
+          <span v-if="active('context') && day.context" class="context-ribbon" :class="day.context.segment">
+            <MapPin :size="12" aria-hidden="true" />
+            <span v-if="day.context.segment === 'start'" class="signal-text">{{ day.context.place_label || day.context.period_type }}</span>
+          </span>
           <span v-if="day.has_data" class="signals">
             <span v-for="signal in visibleSignals(day).shown" :key="signal.key" class="signal" :class="`tone-${signal.tone}`" :title="signal.label">
               <component :is="signal.icon" :size="14" aria-hidden="true" />
@@ -126,6 +192,12 @@ onMounted(() => { if (selected.value) preview.load() })
     </div>
     <aside v-if="selected" class="day-pane card">
       <h2>{{ new Date(`${selected}T12:00:00`).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' }) }}</h2>
+      <p v-if="data?.days.find((d) => d.date === selected)?.context" class="muted">
+        Контекст: {{ data.days.find((d) => d.date === selected)?.context?.place_label || data.days.find((d) => d.date === selected)?.context?.period_type }}
+      </p>
+      <p v-if="data?.days.find((d) => d.date === selected)?.weather" class="muted">
+        Погода: {{ data.days.find((d) => d.date === selected)?.weather?.temp_mean_c != null ? `${Math.round(Number(data.days.find((d) => d.date === selected)?.weather?.temp_mean_c))}°` : 'нет данных' }}
+      </p>
       <StatePanel v-if="preview.loading.value" kind="loading" />
       <StatePanel v-else-if="preview.error.value" kind="error" :message="preview.error.value" @retry="preview.load()" />
       <StatePanel v-else-if="!preview.data.value?.events.length" kind="empty" title="За этот день нет записей" />
@@ -141,34 +213,57 @@ onMounted(() => { if (selected.value) preview.load() })
 </template>
 <style scoped>
 .calendar-page { display: grid; grid-template-columns: minmax(0, 1fr) 350px; gap: var(--s4); min-width: 0; }
-.calendar-header, .segmented, .month-grid { grid-column: 1; min-width: 0; }
+.calendar-header, .layer-filters, .legend, .month-grid { grid-column: 1; min-width: 0; }
 .calendar-header { display: flex; justify-content: space-between; }
 .icon-nav { display: inline-flex; align-items: center; justify-content: center; padding-inline: var(--s3); }
+.layer-filters { display: flex; flex-wrap: wrap; gap: var(--s2); }
+.layer-chip {
+  border: 1px solid var(--border); background: var(--surface); color: var(--muted);
+  border-radius: 999px; padding: 6px 10px; font-size: .8rem;
+}
+.layer-chip.active { color: var(--text); border-color: currentColor; font-weight: 600; }
+.layer-chip.tone-pain.active { color: var(--pain); }
+.layer-chip.tone-medication.active { color: var(--medication); }
+.layer-chip.tone-activity.active { color: var(--activity); }
+.layer-chip.tone-sleep.active { color: var(--sleep); }
+.layer-chip.tone-wellbeing.active { color: var(--wellbeing); }
+.layer-chip.tone-context.active { color: var(--context); }
+.layer-chip.tone-weather.active { color: var(--weather); }
+.legend { font-size: .75rem; margin: 0; }
 .month-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: var(--s1); }
 .month-grid > b { text-align: center; color: var(--muted); font-size: .75rem; }
 .day-cell {
   position: relative; min-width: 0; min-height: 92px; overflow: hidden; border: 1px solid var(--border);
   border-radius: 8px; background: var(--surface); padding: var(--s2); text-align: left;
-  display: grid; align-content: start; gap: var(--s2);
+  display: grid; align-content: start; gap: 4px;
 }
 .day-cell.selected { outline: 3px solid var(--primary); }
-.day-cell.tone-pain { background: color-mix(in srgb, var(--pain) 8%, var(--surface)); }
-.day-cell.tone-medication { background: color-mix(in srgb, var(--medication) 8%, var(--surface)); }
-.day-cell.tone-activity { background: color-mix(in srgb, var(--activity) 8%, var(--surface)); }
-.day-cell.tone-sleep { background: color-mix(in srgb, var(--sleep) 8%, var(--surface)); }
-.day-cell.tone-wellbeing { background: color-mix(in srgb, var(--wellbeing) 8%, var(--surface)); }
-.signals { display: grid; gap: 4px; min-width: 0; }
-.signal { display: flex; align-items: center; gap: 4px; min-width: 0; color: var(--muted); font-size: .7rem; }
+.stripes { position: absolute; left: 0; top: 0; bottom: 0; display: grid; width: 4px; }
+.stripe { display: block; }
+.stripe.tone-pain { background: var(--pain); }
+.stripe.tone-medication { background: var(--medication); }
+.stripe.tone-activity { background: var(--activity); }
+.stripe.tone-sleep { background: var(--sleep); }
+.stripe.tone-wellbeing { background: var(--wellbeing); }
+.stripe.tone-context { background: var(--context); }
+.stripe.tone-weather { background: var(--weather); }
+.context-ribbon {
+  display: inline-flex; align-items: center; gap: 2px; color: var(--context); font-size: .65rem;
+  background: color-mix(in srgb, var(--context) 12%, var(--surface)); border-radius: 999px; padding: 1px 6px;
+}
+.signals { display: grid; gap: 2px; min-width: 0; }
+.signal { display: flex; align-items: center; gap: 4px; min-width: 0; color: var(--muted); font-size: .7rem; font-variant-numeric: tabular-nums; }
 .signal.tone-pain { color: var(--pain); }
 .signal.tone-medication { color: var(--medication); }
 .signal.tone-activity { color: var(--activity); }
 .signal.tone-sleep { color: var(--sleep); }
 .signal.tone-wellbeing { color: var(--wellbeing); }
+.signal.tone-weather { color: var(--weather); }
 .signal-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .overflow { color: var(--muted); font-size: .7rem; font-weight: 700; }
 .day-cell small { color: var(--muted); overflow-wrap: anywhere; font-size: .65rem; }
 .pending-dot { position: absolute; top: 8px; right: 8px; width: 8px; height: 8px; border-radius: 50%; background: var(--danger); }
-.day-pane { grid-column: 2; grid-row: 1 / 5; }
+.day-pane { grid-column: 2; grid-row: 1 / 6; }
 .preview-events { display: grid; gap: var(--s3); }
 .preview-actions { margin-top: var(--s4); }
 .preview-actions .button { text-decoration: none; }
@@ -180,7 +275,7 @@ onMounted(() => { if (selected.value) preview.load() })
 @media (max-width: 520px) {
   .calendar-header { display: grid; }
   .calendar-header .cluster { margin-bottom: var(--s2); }
-  .day-cell { min-height: 64px; padding: 4px; }
+  .day-cell { min-height: 64px; padding: 4px 4px 4px 8px; }
   .signal-text { display: none; }
 }
 </style>

@@ -19,9 +19,10 @@
           "client_ref": { "type": "string", "minLength": 1, "maxLength": 64 },
           "kind": {
             "type": "string",
-            "enum": ["pain_observation", "medication_intake", "wellbeing", "activity", "sleep", "food_drink", "measurement", "note"]
+            "enum": ["pain_observation", "medication_intake", "wellbeing", "activity", "sleep", "food_drink", "measurement", "note", "life_context"]
           },
           "occurred_at": { "type": "string", "format": "date-time" },
+          "ended_at": { "type": ["string", "null"], "format": "date-time" },
           "time_precision": {
             "type": "string",
             "enum": ["exact", "approximate", "date_only", "inferred_from_message"]

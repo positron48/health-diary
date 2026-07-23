@@ -15,14 +15,17 @@ import (
 	"health-diary/internal/episode"
 	"health-diary/internal/ingest"
 	"health-diary/internal/userday"
+	"health-diary/internal/weather"
 
 	"github.com/jackc/pgx/v5"
 )
 
 var eventKinds = map[string]bool{
 	"pain_observation": true, "medication_intake": true, "wellbeing": true,
-	"activity": true, "sleep": true, "food_drink": true, "measurement": true, "note": true,
+	"activity": true, "sleep": true, "food_drink": true, "measurement": true, "note": true, "life_context": true,
 }
+
+var calendarLayers = []string{"pain", "medication", "activity", "sleep", "wellbeing", "context", "weather"}
 
 func (a *App) createEntry(w http.ResponseWriter, r *http.Request) {
 	if a.ingest == nil {
@@ -330,17 +333,9 @@ func validateEvent(event eventDTO) map[string]string {
 func (a *App) calendarV1(w http.ResponseWriter, r *http.Request) {
 	user := sessionUser(r)
 	month, err := time.Parse("2006-01", r.URL.Query().Get("month"))
-	mode := r.URL.Query().Get("mode")
-	if mode == "" {
-		mode = "overview"
-	}
-	validModes := map[string]bool{"overview": true, "pain": true, "medication": true, "activity": true, "sleep": true, "wellbeing": true}
 	fields := map[string]string{}
 	if err != nil {
 		fields["month"] = "must be YYYY-MM"
-	}
-	if !validModes[mode] {
-		fields["mode"] = "unsupported mode"
 	}
 	if len(fields) > 0 {
 		writeAPIError(w, r, 422, "validation_failed", "Проверьте параметры", fields)
@@ -390,7 +385,14 @@ func (a *App) calendarV1(w http.ResponseWriter, r *http.Request) {
 				days[date] = day
 			}
 			day.PendingCount++
+			day.HasPending = true
 		}
+	}
+	if a.config.ContextEnabled {
+		a.attachContextLayers(r.Context(), user.ID, month, nextMonth, days)
+	}
+	if a.config.WeatherEnabled {
+		a.attachWeatherLayers(r.Context(), user.ID, month, nextMonth, days)
 	}
 	result := []calendarDay{}
 	for day := month; day.Before(nextMonth); day = day.AddDate(0, 0, 1) {
@@ -401,17 +403,25 @@ func (a *App) calendarV1(w http.ResponseWriter, r *http.Request) {
 			result = append(result, calendarDay{Date: date})
 		}
 	}
-	writeJSON(w, 200, map[string]any{"month": month.Format("2006-01"), "mode": mode, "timezone": user.Timezone, "days": result})
+	writeJSON(w, 200, map[string]any{
+		"month":            month.Format("2006-01"),
+		"timezone":         user.Timezone,
+		"layers_available": calendarLayers,
+		"days":             result,
+	})
 }
 
 type calendarDay struct {
 	Date         string         `json:"date"`
 	HasData      bool           `json:"has_data"`
+	HasPending   bool           `json:"has_pending"`
 	Pain         map[string]any `json:"pain,omitempty"`
 	Medication   map[string]any `json:"medication,omitempty"`
 	Activity     map[string]any `json:"activity,omitempty"`
 	Sleep        map[string]any `json:"sleep,omitempty"`
 	Wellbeing    map[string]any `json:"wellbeing,omitempty"`
+	Context      map[string]any `json:"context,omitempty"`
+	Weather      map[string]any `json:"weather,omitempty"`
 	PendingCount int            `json:"pending_count"`
 }
 
@@ -421,13 +431,20 @@ func (d *calendarDay) add(kind string, raw json.RawMessage) {
 	switch kind {
 	case "pain_observation":
 		if d.Pain == nil {
-			d.Pain = map[string]any{"episodes": 0, "open": false}
+			d.Pain = map[string]any{"open": false}
 		}
-		d.Pain["episodes"] = d.Pain["episodes"].(int) + 1
 		if value, ok := data["intensity"].(float64); ok {
 			if old, ok := d.Pain["max_intensity"].(float64); !ok || value > old {
 				d.Pain["max_intensity"] = value
 			}
+		} else if _, ok := d.Pain["max_intensity"]; !ok {
+			d.Pain["max_intensity"] = nil
+		}
+		if data["phase"] == "start" || data["phase"] == "update" {
+			d.Pain["open"] = true
+		}
+		if data["phase"] == "end" {
+			d.Pain["open"] = false
 		}
 	case "medication_intake":
 		if d.Medication == nil {
@@ -452,6 +469,106 @@ func (d *calendarDay) add(kind string, raw json.RawMessage) {
 			d.Wellbeing = map[string]any{}
 		}
 		d.Wellbeing["score"] = data["wellbeing_score"]
+		d.Wellbeing["motivation"] = data["motivation_score"]
+		d.Wellbeing["energy"] = data["energy_score"]
+	case "life_context", "food_drink", "measurement", "note":
+		// Presence only — details live in day timeline / context periods.
+	}
+}
+
+func (a *App) attachContextLayers(ctx context.Context, userID string, month, nextMonth time.Time, days map[string]*calendarDay) {
+	rows, err := a.db.Query(ctx, `SELECT period_type,COALESCE(place_label,''),started_on,ended_on
+		FROM context_periods
+		WHERE user_id=$1 AND status IN ('open','closed')
+		AND started_on < $3::date AND (ended_on IS NULL OR ended_on >= $2::date)`,
+		userID, month.Format("2006-01-02"), nextMonth.Format("2006-01-02"))
+	if err != nil {
+		return
+	}
+	defer rows.Close()
+	type period struct {
+		periodType, placeLabel string
+		started, ended         time.Time
+		hasEnd                 bool
+	}
+	var periods []period
+	for rows.Next() {
+		var item period
+		var ended *time.Time
+		if rows.Scan(&item.periodType, &item.placeLabel, &item.started, &ended) != nil {
+			continue
+		}
+		if ended != nil {
+			item.ended = *ended
+			item.hasEnd = true
+		}
+		periods = append(periods, item)
+	}
+	for day := month; day.Before(nextMonth); day = day.AddDate(0, 0, 1) {
+		date := day.Format("2006-01-02")
+		for _, period := range periods {
+			if day.Before(period.started) {
+				continue
+			}
+			if period.hasEnd && day.After(period.ended) {
+				continue
+			}
+			segment := "middle"
+			if day.Equal(period.started) {
+				segment = "start"
+			}
+			if period.hasEnd && day.Equal(period.ended) {
+				segment = "end"
+			}
+			cell := days[date]
+			if cell == nil {
+				cell = &calendarDay{Date: date, HasData: true}
+				days[date] = cell
+			} else {
+				cell.HasData = true
+			}
+			cell.Context = map[string]any{
+				"period_type": period.periodType,
+				"place_label": period.placeLabel,
+				"segment":     segment,
+			}
+			break
+		}
+	}
+}
+
+func (a *App) attachWeatherLayers(ctx context.Context, userID string, month, nextMonth time.Time, days map[string]*calendarDay) {
+	rows, err := a.db.Query(ctx, `SELECT local_date,temp_mean_c,weather_code,pressure_delta_24h_hpa,is_complete
+		FROM daily_weather WHERE user_id=$1 AND local_date >= $2::date AND local_date < $3::date`,
+		userID, month.Format("2006-01-02"), nextMonth.Format("2006-01-02"))
+	if err != nil {
+		return
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var localDate time.Time
+		var temp *float64
+		var code *int
+		var delta *float64
+		var complete bool
+		if rows.Scan(&localDate, &temp, &code, &delta, &complete) != nil {
+			continue
+		}
+		date := localDate.Format("2006-01-02")
+		cell := days[date]
+		if cell == nil {
+			cell = &calendarDay{Date: date}
+			days[date] = cell
+		}
+		cell.Weather = map[string]any{
+			"temp_mean_c":            temp,
+			"weather_code":           code,
+			"pressure_delta_24h_hpa": delta,
+			"is_complete":            complete,
+		}
+		if complete {
+			cell.HasData = true
+		}
 	}
 }
 
@@ -591,12 +708,25 @@ func (a *App) patchMe(w http.ResponseWriter, r *http.Request) {
 		var settings map[string]any
 		if json.Unmarshal(input.Settings, &settings) != nil {
 			fields["settings"] = "must be an object"
-		} else if value, ok := settings["day_start_time"]; ok {
-			text, ok := value.(string)
-			if !ok {
-				fields["settings.day_start_time"] = "must be HH:MM"
-			} else if _, err := userday.ParseStart(text); err != nil {
-				fields["settings.day_start_time"] = "must be HH:MM"
+		} else {
+			if value, ok := settings["day_start_time"]; ok {
+				text, ok := value.(string)
+				if !ok {
+					fields["settings.day_start_time"] = "must be HH:MM"
+				} else if _, err := userday.ParseStart(text); err != nil {
+					fields["settings.day_start_time"] = "must be HH:MM"
+				}
+			}
+			if value, ok := settings["home_place_id"]; ok && value != nil {
+				text, ok := value.(string)
+				if !ok || text == "" {
+					fields["settings.home_place_id"] = "must be a place id"
+				} else {
+					var exists string
+					if err := a.db.QueryRow(r.Context(), `SELECT id::text FROM places WHERE id=$1 AND (user_id IS NULL OR user_id=$2)`, text, sessionUser(r).ID).Scan(&exists); err != nil {
+						fields["settings.home_place_id"] = "unknown place"
+					}
+				}
 			}
 		}
 	}
@@ -613,6 +743,15 @@ func (a *App) patchMe(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		writeAPIError(w, r, 500, "internal_error", "Не удалось сохранить настройки", nil)
 		return
+	}
+	if a.config.WeatherEnabled && len(input.Settings) > 0 {
+		var parsed map[string]any
+		_ = json.Unmarshal(settings, &parsed)
+		if home, ok := parsed["home_place_id"].(string); ok && home != "" {
+			to := time.Now().AddDate(0, 0, -1).Format("2006-01-02")
+			from := time.Now().AddDate(0, 0, -90).Format("2006-01-02")
+			_ = weather.EnqueueRange(r.Context(), a.db, user.ID, home, from, to, a.config.JobMaxAttempts)
+		}
 	}
 	writeJSON(w, 200, map[string]any{"id": user.ID, "timezone": timezone, "locale": locale, "settings": settings})
 }
@@ -707,29 +846,49 @@ func (a *App) analyticsAssociations(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, r, 500, "internal_error", "Не удалось рассчитать аналитику", nil)
 		return
 	}
-	days := int(to.Sub(*from).Hours() / 24)
-	starts := 0
-	exposureDays := map[string]bool{}
-	for _, event := range events {
-		if event.Kind == "pain_observation" {
-			var data map[string]any
-			_ = json.Unmarshal(event.Attributes, &data)
-			if data["phase"] == "start" || data["phase"] == nil {
-				starts++
+	exposures := map[string]analytics.DayExposure{}
+	contextRows, _ := a.db.Query(r.Context(), `SELECT started_on,COALESCE(ended_on, CURRENT_DATE)
+		FROM context_periods WHERE user_id=$1 AND status IN ('open','closed')
+		AND started_on < $3::date AND (ended_on IS NULL OR ended_on >= $2::date)`,
+		user.ID, from.Format("2006-01-02"), to.Format("2006-01-02"))
+	if contextRows != nil {
+		defer contextRows.Close()
+		for contextRows.Next() {
+			var started, ended time.Time
+			if contextRows.Scan(&started, &ended) != nil {
+				continue
+			}
+			for day := started; !day.After(ended); day = day.AddDate(0, 0, 1) {
+				date := day.Format("2006-01-02")
+				exp := exposures[date]
+				exp.TravelDay = true
+				exposures[date] = exp
 			}
 		}
-		if event.Kind == "sleep" || event.Kind == "activity" || event.Kind == "wellbeing" {
-			exposureDays[userday.Date(event.OccurredAt, userLocation(user.Timezone), userday.Start(user.DayStart))] = true
+	}
+	if a.config.WeatherAssociations {
+		weatherRows, _ := a.db.Query(r.Context(), `SELECT local_date,pressure_delta_24h_hpa FROM daily_weather
+			WHERE user_id=$1 AND is_complete AND local_date >= $2::date AND local_date < $3::date`,
+			user.ID, from.Format("2006-01-02"), to.Format("2006-01-02"))
+		if weatherRows != nil {
+			defer weatherRows.Close()
+			for weatherRows.Next() {
+				var localDate time.Time
+				var delta *float64
+				if weatherRows.Scan(&localDate, &delta) != nil {
+					continue
+				}
+				if delta != nil && *delta <= -5 {
+					date := localDate.Format("2006-01-02")
+					exp := exposures[date]
+					exp.PressureDrop = true
+					exposures[date] = exp
+				}
+			}
 		}
 	}
-	requirements := map[string]any{
-		"observation_days": map[string]int{"actual": days, "required": 56},
-		"headache_starts":  map[string]int{"actual": starts, "required": 8},
-		"exposure_days":    map[string]int{"actual": len(exposureDays), "required": 10},
-	}
-	// MVP deliberately does not emit an association until comparable exposed
-	// and unexposed windows are represented by a versioned rule.
-	writeJSON(w, 200, map[string]any{"status": "insufficient_data", "requirements": requirements, "associations": []any{}, "formula_version": "health-diary-associations-v1", "limitation": "Записи описывают возможные связи и не доказывают причинность"})
+	result := analytics.BuildAssociations(events, exposures, *from, *to, user.Timezone, user.DayStart, a.config.WeatherAssociations)
+	writeJSON(w, 200, result)
 }
 
 func (a *App) analyticsMedications(w http.ResponseWriter, r *http.Request) {

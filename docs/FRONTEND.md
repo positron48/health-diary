@@ -219,24 +219,20 @@ changes use the event edit form.
 
 ### 6.4 Calendar
 
-Header contains month navigation, `Сегодня` and a horizontal mode switch:
-`Обзор`, `Боль`, `Лекарства`, `Активность`, `Сон`, `Самочувствие`.
+Header contains month navigation, `Сегодня` and multi-select layer chips:
+`Боль`, `Лекарства`, `Активность`, `Сон`, `Самочувствие`, `Контекст`, `Погода`.
 
-Each day cell shows at most two strong signals and a `+N` overflow count. The
-overview uses small labeled icons; specialized modes use their stable metric:
+Each day cell stays compact:
 
-- pain: episode count and max intensity `?/10` when unknown;
-- medication: intake count without safe/unsafe coloring;
-- activity: recorded minutes;
-- sleep: duration/quality with explicit missing state;
-- wellbeing: score with explicit missing state.
+- pain: icon + max intensity (`6`), never episode count or `/10`;
+- medication: pill icon + intake count;
+- activity: icon + `45м`;
+- sleep: icon + `7ч`;
+- wellbeing/motivation: icon + score;
+- weather: icon + one temperature;
+- context: thin continuous ribbon; city/type label only at the visible segment start.
 
-An empty cell means `Нет записей`, never “healthy” or “no headache”. Explicit
-no-headache check-ins need their own text/icon if that feature is enabled.
-Switching mode must preserve month and selected day and must not fetch raw text.
-Selecting a day loads a no-store preview of its ten latest confirmed events.
-Desktop shows it in the persistent side pane; mobile shows it below the grid.
-The pane links to the complete `/day/:date` timeline and offers `Добавить запись`.
+Present layers share a segmented color stripe (not a blended gradient). Empty cell means `Нет записей`. Switching layers must preserve month and selected day and must not refetch. Selecting a day loads a no-store preview of its ten latest confirmed events.
 
 ### 6.5 Day timeline
 

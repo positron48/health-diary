@@ -33,6 +33,11 @@ type Summary struct {
 	SleepQualityKnown          int            `json:"sleep_quality_known"`
 	WellbeingRecords           int            `json:"wellbeing_records"`
 	WellbeingScoreKnown        int            `json:"wellbeing_score_known"`
+	EnergyScoreKnown           int            `json:"energy_score_known"`
+	MotivationScoreKnown       int            `json:"motivation_score_known"`
+	MoodScoreKnown             int            `json:"mood_score_known"`
+	StressScoreKnown           int            `json:"stress_score_known"`
+	TravelDays                 int            `json:"travel_days,omitempty"`
 }
 
 // BuildSummary has no provider dependency and operates only on already
@@ -52,6 +57,8 @@ func BuildSummary(events []Event, from, to time.Time, timezone string, dayStart 
 	activityMinutes, activityRecords := 0, 0
 	sleepMinutes, sleepRecords, sleepQualityKnown := 0, 0, 0
 	wellbeingRecords, wellbeingScoreKnown := 0, 0
+	energyKnown, motivationKnown, moodKnown, stressKnown := 0, 0, 0, 0
+	travelDays := map[string]bool{}
 	for _, event := range events {
 		day := userday.Date(event.OccurredAt, loc, dayStart)
 		daySet[day] = true
@@ -100,6 +107,20 @@ func BuildSummary(events []Event, from, to time.Time, timezone string, dayStart 
 			if data["wellbeing_score"] != nil {
 				wellbeingScoreKnown++
 			}
+			if data["energy_score"] != nil {
+				energyKnown++
+			}
+			if data["motivation_score"] != nil {
+				motivationKnown++
+			}
+			if data["mood_score"] != nil {
+				moodKnown++
+			}
+			if data["stress_score"] != nil {
+				stressKnown++
+			}
+		case "life_context":
+			travelDays[day] = true
 		}
 	}
 	days := int(to.Sub(from).Hours() / 24)
@@ -108,5 +129,5 @@ func BuildSummary(events []Event, from, to time.Time, timezone string, dayStart 
 		value := intensitySum / float64(intensityN)
 		intensityAverage = &value
 	}
-	return Summary{FormulaVersion: FormulaVersion, From: from.In(loc).Format("2006-01-02"), To: to.In(loc).Format("2006-01-02"), Timezone: timezone, ObservationDays: days, DiaryDays: len(daySet), ConfirmedEvents: len(events), Counts: counts, HeadacheDays: len(headacheSet), MedicationDays: len(medicationSet), UnknownMedicationDoseCount: unknownDose, MedicationIntakes: medicationIntakes, RecordedMedicationEffects: recordedEffects, PainIntensityKnown: intensityN, PainIntensityAverage: intensityAverage, PainIntensityMaximum: intensityMax, ActivityMinutes: activityMinutes, ActivityRecords: activityRecords, SleepMinutes: sleepMinutes, SleepRecords: sleepRecords, SleepQualityKnown: sleepQualityKnown, WellbeingRecords: wellbeingRecords, WellbeingScoreKnown: wellbeingScoreKnown}
+	return Summary{FormulaVersion: FormulaVersion, From: from.In(loc).Format("2006-01-02"), To: to.In(loc).Format("2006-01-02"), Timezone: timezone, ObservationDays: days, DiaryDays: len(daySet), ConfirmedEvents: len(events), Counts: counts, HeadacheDays: len(headacheSet), MedicationDays: len(medicationSet), UnknownMedicationDoseCount: unknownDose, MedicationIntakes: medicationIntakes, RecordedMedicationEffects: recordedEffects, PainIntensityKnown: intensityN, PainIntensityAverage: intensityAverage, PainIntensityMaximum: intensityMax, ActivityMinutes: activityMinutes, ActivityRecords: activityRecords, SleepMinutes: sleepMinutes, SleepRecords: sleepRecords, SleepQualityKnown: sleepQualityKnown, WellbeingRecords: wellbeingRecords, WellbeingScoreKnown: wellbeingScoreKnown, EnergyScoreKnown: energyKnown, MotivationScoreKnown: motivationKnown, MoodScoreKnown: moodKnown, StressScoreKnown: stressKnown, TravelDays: len(travelDays)}
 }

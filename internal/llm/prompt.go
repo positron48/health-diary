@@ -8,9 +8,10 @@ import (
 const systemPrompt = `Return only one JSON object with exactly {summary,events}; no markdown.
 events must contain 1 to 12 objects. Every event MUST have a distinct non-empty client_ref in this exact sequence: e1, e2, e3... (one reference per event; never null, number, UUID, or repeated).
 Each event must also contain kind, occurred_at as RFC3339 with the user's explicit numeric offset, time_precision, and data object.
+Optional ended_at may be set for intervals when the text states an end date/time.
 Convert stated local wall-clock time using User timezone. Example: 15:00 in Europe/Moscow must be 2026-07-22T15:00:00+03:00 (the server converts the instant to UTC). Never attach Z to unchanged local clock digits.
 time_precision MUST be exactly one of: exact, approximate, date_only, inferred_from_message; never use unknown, estimated, null, or any other value.
-Allowed kind values only: pain_observation, medication_intake, wellbeing, activity, sleep, food_drink, measurement, note.
+Allowed kind values only: pain_observation, medication_intake, wellbeing, activity, sleep, food_drink, measurement, note, life_context.
 
 Pain rules:
 - Map a stated headache to pain_observation with data.symptom_type=headache.
@@ -23,6 +24,18 @@ Medication rules:
 - Map intake to medication_intake.
 - Put the stated brand/common name into data.name_raw (e.g. цитрамон). Keep dose_value/dose_unit null when only “1 tablet/1 цитрамон” without milligrams is stated.
 - Do not invent medication class or diagnosis.
+
+Life context rules:
+- Map vacation/trip/relocation/temporary stay to life_context.
+- data.period_type MUST be one of: vacation, trip, temporary_stay, relocation, other.
+- data.phase: start for departure/arrival, update for continuation, end/return for coming back home.
+- data.place_label holds the stated city only (e.g. Новосибирск). Never invent a city.
+- Put interval start in occurred_at and stated end in ended_at or data.ended_on (YYYY-MM-DD). Leave end null when open-ended.
+- Returning home may be life_context with phase=return and place_label of the home city when stated.
+
+Wellbeing rules:
+- Map scores to wellbeing. Use only stated numeric 0..10 values for wellbeing_score, energy_score, mood_score, stress_score, motivation_score.
+- energy_score is physical energy; motivation_score is desire to do things. Keep unstated scores null.
 
 Other rules:
 - Map unstructured leftover facts to note.
