@@ -191,7 +191,12 @@ onMounted(() => { if (selected.value) preview.load() })
             <i v-for="tone in stripeLayers(day)" :key="tone" :class="`stripe tone-${tone}`" />
           </span>
           <strong>{{ Number(day.date.slice(-2)) }}</strong>
-          <span v-if="active('context') && day.context" class="context-ribbon" :class="day.context.segment">
+          <span
+            v-if="active('context') && day.context"
+            class="context-ribbon"
+            :class="day.context.segment"
+            :title="day.context.place_label || contextTypeLabel(day.context.period_type)"
+          >
             <MapPin :size="12" aria-hidden="true" />
             <span class="signal-text">{{ day.context.place_label || contextTypeLabel(day.context.period_type) }}</span>
           </span>
@@ -266,9 +271,12 @@ onMounted(() => { if (selected.value) preview.load() })
 .stripe.tone-context { background: var(--context); }
 .stripe.tone-weather { background: var(--weather); }
 .context-ribbon {
-  display: inline-flex; align-items: center; gap: 2px; color: var(--context); font-size: .65rem;
+  display: flex; align-items: center; gap: 2px; min-width: 0; max-width: 100%;
+  color: var(--context); font-size: .65rem;
   background: color-mix(in srgb, var(--context) 12%, var(--surface)); border-radius: 999px; padding: 1px 6px;
 }
+.context-ribbon :deep(svg) { flex-shrink: 0; }
+.context-ribbon .signal-text { min-width: 0; flex: 1 1 auto; }
 .signals { display: grid; gap: 2px; min-width: 0; }
 .signal { display: flex; align-items: center; gap: 4px; min-width: 0; color: var(--muted); font-size: .7rem; font-variant-numeric: tabular-nums; }
 .signal.tone-pain { color: var(--pain); }
