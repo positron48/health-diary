@@ -121,6 +121,16 @@ Common event envelope.
 
 Unique `(batch_id, client_ref)`. Analytics filter: `status='confirmed' AND deleted_at IS NULL`.
 
+Shared attribute on any kind:
+
+- `comment` — optional user-authored free text (max 1000 runes). Set only via web `PATCH /events/{id}`; LLM extraction must not invent or persist it. Distinct from kind `note` (a standalone note event). Not used in analytics aggregates.
+
+Activity attributes (JSONB payload; typed `activities` table remains schema reserve):
+
+- `activity_type` — free-text kind (e.g. бег, йога); null when unknown
+- `duration_minutes` — positive int or null; never invent
+- `intensity` — `low` / `moderate` / `high` or null (not the pain 0..10 scale)
+
 Kinds:
 
 - `pain_observation`

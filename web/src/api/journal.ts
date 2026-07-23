@@ -1,5 +1,5 @@
 import { API_BASE, json, request } from './client'
-import type { DayResponse, Episode, HealthEvent, PendingBatch } from './types'
+import type { DayResponse, Episode, HealthEvent, InboxResponse, PendingBatch } from './types'
 export const journalApi = {
   events: (params = '') => request<{ events: HealthEvent[] }>(`${API_BASE}/events${params}`),
   dayPreview: (date: string) => request<{ events: HealthEvent[] }>(`${API_BASE}/events?from=${encodeURIComponent(date)}&to=${encodeURIComponent(date)}&limit=10`),
@@ -10,6 +10,7 @@ export const journalApi = {
   event: (id: string) => request<HealthEvent>(`${API_BASE}/events/${id}`),
   day: (date: string) => request<DayResponse>(`${API_BASE}/days/${date}`),
   pending: () => request<{ batches: PendingBatch[] }>(`${API_BASE}/batches?status=pending`),
+  inbox: () => request<InboxResponse>(`${API_BASE}/inbox`),
   confirm: (id: string, version: number) => request<void>(`${API_BASE}/batches/${id}/confirm`, json('POST', { version })),
   reject: (id: string, version: number) => request<void>(`${API_BASE}/batches/${id}/reject`, json('POST', { version })),
   update: (id: string, patch: Record<string, unknown>) => request<HealthEvent>(`${API_BASE}/events/${id}`, json('PATCH', patch)),

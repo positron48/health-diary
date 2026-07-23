@@ -70,6 +70,26 @@ func TestValidateResultRejectsInvalidPainAndDose(t *testing.T) {
 	}
 }
 
+func TestValidateResultAcceptsActivityAndRejectsBadIntensity(t *testing.T) {
+	valid := Result{Summary: "x", Events: []Event{{
+		ClientRef: "e1", Kind: "activity", OccurredAt: "2026-07-21T12:00:00Z", TimePrecision: "exact",
+		Data: map[string]any{"activity_type": "йога", "duration_minutes": float64(30), "intensity": "low"},
+	}}}
+	if err := ValidateResult(valid); err != nil {
+		t.Fatalf("valid activity: %v", err)
+	}
+	bad := valid
+	bad.Events[0].Data = map[string]any{"intensity": "hard"}
+	if err := ValidateResult(bad); err == nil {
+		t.Fatal("expected activity intensity rejection")
+	}
+	badDuration := valid
+	badDuration.Events[0].Data = map[string]any{"duration_minutes": float64(-5)}
+	if err := ValidateResult(badDuration); err == nil {
+		t.Fatal("expected duration rejection")
+	}
+}
+
 func TestFakeJuly20HeadacheNarrative(t *testing.T) {
 	text := `20 июля в обед начала слегка болеть голова в верхней части
 к 16 часам начала болеть сильнее, выпил 1 цитрамон

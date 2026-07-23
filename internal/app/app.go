@@ -186,6 +186,7 @@ func (a *App) Handler() http.Handler {
 	mux.Handle("PATCH /api/v1/events/{id}", a.requireSession(http.HandlerFunc(a.patchEvent)))
 	mux.Handle("GET /batches/pending", a.requireSession(http.HandlerFunc(a.pendingBatches)))
 	mux.Handle("GET /api/v1/batches", a.requireSession(http.HandlerFunc(a.pendingBatchesV1)))
+	mux.Handle("GET /api/v1/inbox", a.requireSession(http.HandlerFunc(a.inboxV1)))
 	mux.Handle("GET /api/v1/entries/{id}", a.requireSession(http.HandlerFunc(a.sourceEntry)))
 	mux.Handle("GET /exports", a.requireSession(http.HandlerFunc(a.exportEvents)))
 	mux.Handle("GET /api/v1/exports", a.requireSession(http.HandlerFunc(a.exportEvents)))

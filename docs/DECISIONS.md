@@ -113,6 +113,18 @@ This is a lightweight ADR registry. Update status and rationale before changing 
 - Decision: `GET /api/v1/calendar` returns all day-layer aggregates in one response. The web UI uses multi-select `?layers=` filters (pain, medication, activity, sleep, wellbeing, context, weather) instead of exclusive `mode` tabs. Compact day cells show icon + short metric only; color is a segmented stripe per present layer. Query param `mode` remains accepted as a temporary alias that maps to a single layer for old bookmarks.
 - Reason: the product goal is cross-signal visual review (pain vs medication vs travel vs weather) on one month grid without visual noise or refetch on filter changes.
 
+### ADR-018: User comment on any health event
+
+- Status: accepted
+- Decision: optional free-text `comment` lives in `health_events.attributes`, is editable on any kind via web PATCH, and is never filled by LLM extraction. Kind `note` remains a separate event type for standalone notes.
+- Reason: users need an annotation on confirmed facts without inventing a second event or a schema migration.
+
+### ADR-019: Inbox polling for in-flight entries
+
+- Status: accepted
+- Decision: `GET /api/v1/inbox` returns in-flight journal entries (`queued`/`processing`/`failed`) plus pending confirmation batches. The web inbox polls ~2s while visible; no SSE/WebSocket for MVP.
+- Reason: after web/Telegram recognition the user must see “in processing” immediately and get parsed candidates without a full page reload, without adding a push channel.
+
 ## Deferred
 
 ### ADR-D02: Production domain

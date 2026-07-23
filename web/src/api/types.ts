@@ -24,6 +24,19 @@ export interface PendingBatch {
   message_at?: string
   events: HealthEvent[]
 }
+export interface ProcessingEntry {
+  id: string
+  source_type: string
+  source_sent_at: string
+  processing_status: 'queued' | 'processing' | 'failed' | string
+}
+export interface InboxResponse {
+  processing: ProcessingEntry[]
+  batches: PendingBatch[]
+  processing_count?: number
+  batch_count?: number
+  count: number
+}
 export interface UserSettings { day_start_time?: string; home_place_id?: string }
 export interface Session {
   id: string

@@ -1,12 +1,79 @@
 <script setup lang="ts">
+import { onMounted, onUnmounted, ref } from 'vue'
 import { BarChart3, CalendarDays, Clock3, Inbox, Settings } from '@lucide/vue'
+import { journalApi } from '../api/journal'
+
+const inboxCount = ref(0)
+let pollTimer: ReturnType<typeof setInterval> | null = null
+
 const links = [
-  { to: '/today', label: 'Сегодня', icon: Clock3 }, { to: '/calendar', label: 'Календарь', icon: CalendarDays },
-  { to: '/analytics', label: 'Аналитика', icon: BarChart3 }, { to: '/pending', label: 'Входящие', icon: Inbox },
+  { to: '/today', label: 'Сегодня', icon: Clock3 },
+  { to: '/calendar', label: 'Календарь', icon: CalendarDays },
+  { to: '/analytics', label: 'Аналитика', icon: BarChart3 },
+  { to: '/pending', label: 'Входящие', icon: Inbox, badge: true },
   { to: '/settings', label: 'Ещё', icon: Settings },
 ]
+
+async function refreshBadge() {
+  try {
+    const inbox = await journalApi.inbox()
+    inboxCount.value = inbox.count || 0
+  } catch {
+    /* keep last known count */
+  }
+}
+
+function startPolling() {
+  stopPolling()
+  pollTimer = setInterval(() => {
+    if (document.visibilityState === 'visible') refreshBadge()
+  }, 15000)
+}
+
+function stopPolling() {
+  if (pollTimer) {
+    clearInterval(pollTimer)
+    pollTimer = null
+  }
+}
+
+onMounted(() => {
+  refreshBadge()
+  startPolling()
+})
+onUnmounted(stopPolling)
 </script>
-<template><div class="shell"><aside class="sidebar"><RouterLink class="brand" to="/today">Дневник</RouterLink><nav aria-label="Основная навигация"><RouterLink v-for="link in links" :key="link.to" :to="link.to"><component :is="link.icon" :size="20" />{{ link.label }}</RouterLink></nav><p>Дневник не ставит диагнозы и не даёт медицинских рекомендаций.</p></aside><header class="mobile-header"><RouterLink class="brand" to="/today">Дневник</RouterLink><RouterLink class="settings-link" to="/settings" aria-label="Открыть настройки"><Settings :size="22" /><span>Ещё</span></RouterLink></header><main><RouterView /></main><nav class="bottom-nav" aria-label="Основная навигация"><RouterLink v-for="link in links.slice(0,4)" :key="link.to" :to="link.to"><component :is="link.icon" :size="20" /><span>{{ link.label }}</span></RouterLink></nav></div></template>
+<template>
+  <div class="shell">
+    <aside class="sidebar">
+      <RouterLink class="brand" to="/today">Дневник</RouterLink>
+      <nav aria-label="Основная навигация">
+        <RouterLink v-for="link in links" :key="link.to" :to="link.to">
+          <component :is="link.icon" :size="20" />
+          <span>{{ link.label }}</span>
+          <span v-if="link.badge && inboxCount > 0" class="badge" :aria-label="'Входящих: ' + inboxCount">{{ inboxCount }}</span>
+        </RouterLink>
+      </nav>
+      <p>Дневник не ставит диагнозы и не даёт медицинских рекомендаций.</p>
+    </aside>
+    <header class="mobile-header">
+      <RouterLink class="brand" to="/today">Дневник</RouterLink>
+      <RouterLink class="settings-link" to="/settings" aria-label="Открыть настройки">
+        <Settings :size="22" /><span>Ещё</span>
+      </RouterLink>
+    </header>
+    <main><RouterView /></main>
+    <nav class="bottom-nav" aria-label="Основная навигация">
+      <RouterLink v-for="link in links.slice(0,4)" :key="link.to" :to="link.to">
+        <span class="nav-icon">
+          <component :is="link.icon" :size="20" />
+          <span v-if="link.badge && inboxCount > 0" class="badge badge-dot">{{ inboxCount }}</span>
+        </span>
+        <span>{{ link.label }}</span>
+      </RouterLink>
+    </nav>
+  </div>
+</template>
 <style scoped>
-.shell{min-height:100vh;padding-left:var(--sidebar)}.sidebar{position:fixed;inset:0 auto 0 0;width:var(--sidebar);background:var(--surface);border-right:1px solid var(--border);padding:var(--s5);display:flex;flex-direction:column}.brand{font-size:1.4rem;font-weight:800;text-decoration:none;color:var(--text);margin-bottom:var(--s6)}nav{display:grid;gap:var(--s1)}nav a{display:flex;gap:var(--s3);align-items:center;min-height:48px;padding:var(--s2) var(--s3);border-radius:var(--radius-control);color:var(--muted);text-decoration:none;font-weight:650}.router-link-active{background:#e8f0ea;color:var(--primary)}.sidebar p{margin-top:auto;color:var(--muted);font-size:.8rem}.mobile-header,.bottom-nav{display:none}@media(max-width:700px){.shell{padding-left:0;padding-top:57px}.sidebar{display:none}.mobile-header{position:fixed;z-index:55;inset:0 0 auto;display:flex;align-items:center;justify-content:space-between;height:57px;padding:0 var(--s4);background:var(--surface);border-bottom:1px solid var(--border)}.mobile-header .brand{font-size:1.1rem;margin:0}.settings-link{display:flex;align-items:center;gap:var(--s1);min-height:44px;padding:var(--s2);color:var(--muted);text-decoration:none;font-size:.8rem;font-weight:650}.bottom-nav{display:grid;grid-template-columns:repeat(4,1fr);position:fixed;z-index:60;inset:auto 0 0;background:var(--surface);border-top:1px solid var(--border);padding:var(--s1) var(--s1) calc(var(--s1) + env(safe-area-inset-bottom))}.bottom-nav a{min-width:0;display:flex;flex-direction:column;gap:2px;font-size:.68rem;padding:var(--s1)}}
+.shell{min-height:100vh;padding-left:var(--sidebar)}.sidebar{position:fixed;inset:0 auto 0 0;width:var(--sidebar);background:var(--surface);border-right:1px solid var(--border);padding:var(--s5);display:flex;flex-direction:column}.brand{font-size:1.4rem;font-weight:800;text-decoration:none;color:var(--text);margin-bottom:var(--s6)}nav{display:grid;gap:var(--s1)}nav a{display:flex;gap:var(--s3);align-items:center;min-height:48px;padding:var(--s2) var(--s3);border-radius:var(--radius-control);color:var(--muted);text-decoration:none;font-weight:650}.router-link-active{background:#e8f0ea;color:var(--primary)}.sidebar p{margin-top:auto;color:var(--muted);font-size:.8rem}.badge{margin-left:auto;min-width:1.4rem;height:1.4rem;padding:0 .35rem;border-radius:999px;background:var(--primary);color:#fff;font-size:.7rem;display:inline-flex;align-items:center;justify-content:center}.nav-icon{position:relative;display:inline-flex}.badge-dot{position:absolute;top:-.35rem;right:-.7rem;margin:0}.mobile-header,.bottom-nav{display:none}@media(max-width:700px){.shell{padding-left:0;padding-top:57px}.sidebar{display:none}.mobile-header{position:fixed;z-index:55;inset:0 0 auto;display:flex;align-items:center;justify-content:space-between;height:57px;padding:0 var(--s4);background:var(--surface);border-bottom:1px solid var(--border)}.mobile-header .brand{font-size:1.1rem;margin:0}.settings-link{display:flex;align-items:center;gap:var(--s1);min-height:44px;padding:var(--s2);color:var(--muted);text-decoration:none;font-size:.8rem;font-weight:650}.bottom-nav{display:grid;grid-template-columns:repeat(4,1fr);position:fixed;z-index:60;inset:auto 0 0;background:var(--surface);border-top:1px solid var(--border);padding:var(--s1) var(--s1) calc(var(--s1) + env(safe-area-inset-bottom))}.bottom-nav a{min-width:0;display:flex;flex-direction:column;gap:2px;font-size:.68rem;padding:var(--s1);align-items:center}}
 </style>

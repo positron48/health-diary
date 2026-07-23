@@ -21,6 +21,9 @@ var allowedContextTypes = map[string]bool{
 var allowedLaterality = map[string]bool{
 	"left": true, "right": true, "bilateral": true, "center": true, "unknown": true,
 }
+var allowedActivityIntensity = map[string]bool{
+	"low": true, "moderate": true, "high": true,
+}
 
 // ValidateResult is the application boundary for provider output. It rejects
 // the whole response: partial extraction would silently turn malformed output
@@ -157,6 +160,32 @@ func validateEventData(kind string, data map[string]any) error {
 		for _, key := range []string{"wellbeing_score", "energy_score", "mood_score", "stress_score", "motivation_score", "sleep_quality"} {
 			if err := checkOptionalIntRange(data, key, 0, 10); err != nil {
 				return err
+			}
+		}
+	case "activity":
+		if activityType, ok := data["activity_type"]; ok && activityType != nil {
+			text, ok := activityType.(string)
+			if !ok || len([]rune(text)) > 120 {
+				return fmt.Errorf("activity_type must be a short string")
+			}
+		}
+		if value, ok := data["duration_minutes"]; ok && value != nil {
+			number, ok := asFloat(value)
+			if !ok || number <= 0 || number != float64(int(number)) {
+				return fmt.Errorf("duration_minutes must be a positive integer")
+			}
+		}
+		if intensity, ok := data["intensity"]; ok && intensity != nil {
+			text, ok := intensity.(string)
+			if !ok || !allowedActivityIntensity[text] {
+				return fmt.Errorf("intensity must be low, moderate or high")
+			}
+		}
+	case "sleep":
+		if value, ok := data["duration_minutes"]; ok && value != nil {
+			number, ok := asFloat(value)
+			if !ok || number <= 0 || number != float64(int(number)) {
+				return fmt.Errorf("duration_minutes must be a positive integer")
 			}
 		}
 	case "life_context":

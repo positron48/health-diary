@@ -48,7 +48,7 @@ Use five destinations:
 | Сегодня | `/today` | default screen: pending notice, open episode and today's timeline |
 | Календарь | `/calendar/:month?` | month review with display modes and selected day |
 | Аналитика | `/analytics` | coverage-first 7/30/60/90-day summaries |
-| Входящие | `/pending` | all unconfirmed extraction batches; badge shows count |
+| Входящие | `/pending` | in-flight recognition (`queued`/`processing`/`failed`) plus unconfirmed batches; badge shows combined count; polls ~2s while visible |
 | Ещё | `/settings` | timezone, privacy, export, sessions and destructive actions |
 
 On phones, show `Сегодня`, `Календарь`, `Аналитика` and `Входящие` in a fixed
@@ -257,13 +257,26 @@ analytics before confirmation.
 
 ### 6.6 Event edit
 
-Render a typed form per event kind. Shared fields are date/time, precision and
-optional end time; domain fields remain nullable. Use numeric inputs with clear
-ranges, multi-select chips for symptoms and explicit `Не указано` controls.
+Render a typed form per event kind. Shared fields are date/time, precision,
+optional end time and a free-text `comment` (any kind). Domain fields remain
+nullable. Use numeric inputs with clear ranges, multi-select chips for symptoms
+and explicit `Не указано` controls.
+
+Activity edit must show and write `activity_type`, `duration_minutes` and
+`intensity` (`low` / `moderate` / `high`). Cards and edit titles should surface
+the activity type when known. Event cards show `comment` when non-empty.
 
 Submit only changed fields with the current `revision`. Inline validation maps
 the API `fields` object to controls. Destructive delete is separated from save
 and requires confirmation.
+
+### 6.6a Inbox live updates
+
+After `POST /entries`, navigate to `/pending` and show an optimistic
+“В обработке” card for the returned `entry_id`. Poll `GET /inbox` about every
+2s while the tab is visible; when the entry becomes a pending batch, replace
+the processing card with confirm/reject actions without a full page reload.
+Empty state only when both processing and batches are empty.
 
 ### 6.7 Episode detail
 

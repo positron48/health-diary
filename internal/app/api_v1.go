@@ -322,9 +322,31 @@ func validateEvent(event eventDTO) map[string]string {
 		for _, name := range []string{"wellbeing_score", "energy_score", "mood_score", "stress_score", "sleep_quality"} {
 			checkRange(name, 0, 10)
 		}
-	case "activity", "sleep":
+	case "activity":
 		if value, ok := data["duration_minutes"].(float64); ok && value <= 0 {
 			fields["data.duration_minutes"] = "must be positive"
+		}
+		if value, ok := data["activity_type"]; ok && value != nil {
+			text, ok := value.(string)
+			if !ok || len([]rune(text)) > 120 {
+				fields["data.activity_type"] = "must be a short string"
+			}
+		}
+		if value, ok := data["intensity"]; ok && value != nil {
+			text, ok := value.(string)
+			if !ok || (text != "low" && text != "moderate" && text != "high") {
+				fields["data.intensity"] = "must be low, moderate or high"
+			}
+		}
+	case "sleep":
+		if value, ok := data["duration_minutes"].(float64); ok && value <= 0 {
+			fields["data.duration_minutes"] = "must be positive"
+		}
+	}
+	if value, ok := data["comment"]; ok && value != nil {
+		text, ok := value.(string)
+		if !ok || len([]rune(text)) > 1000 {
+			fields["data.comment"] = "must be a string up to 1000 characters"
 		}
 	}
 	return fields
@@ -608,41 +630,107 @@ func (a *App) pendingBatchesV1(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	user := sessionUser(r)
-	rows, err := a.db.Query(r.Context(), `SELECT b.id::text,b.entry_id::text,b.version,b.created_at,j.source_sent_at,j.source_type,
-		e.id::text,e.kind,e.occurred_at,e.time_precision,e.attributes,e.revision
-		FROM event_batches b JOIN journal_entries j ON j.id=b.entry_id JOIN health_events e ON e.batch_id=b.id
-		WHERE b.user_id=$1 AND b.status='pending' AND e.status='pending' AND e.deleted_at IS NULL ORDER BY b.created_at DESC,e.occurred_at`, user.ID)
+	batches, err := a.loadPendingBatches(r.Context(), user.ID)
 	if err != nil {
 		writeAPIError(w, r, 500, "internal_error", "Не удалось загрузить входящие", nil)
 		return
 	}
-	defer rows.Close()
-	type batch struct {
-		ID         string           `json:"id"`
-		EntryID    string           `json:"entry_id"`
-		SourceType string           `json:"source_type"`
-		Version    int              `json:"version"`
-		CreatedAt  time.Time        `json:"created_at"`
-		MessageAt  time.Time        `json:"message_at"`
-		Events     []map[string]any `json:"events"`
+	writeJSON(w, 200, map[string]any{"batches": batches, "count": len(batches)})
+}
+
+func (a *App) inboxV1(w http.ResponseWriter, r *http.Request) {
+	user := sessionUser(r)
+	processing, err := a.loadProcessingEntries(r.Context(), user.ID)
+	if err != nil {
+		writeAPIError(w, r, 500, "internal_error", "Не удалось загрузить входящие", nil)
+		return
 	}
-	ordered := []*batch{}
-	index := map[string]*batch{}
+	batches, err := a.loadPendingBatches(r.Context(), user.ID)
+	if err != nil {
+		writeAPIError(w, r, 500, "internal_error", "Не удалось загрузить входящие", nil)
+		return
+	}
+	writeJSON(w, 200, map[string]any{
+		"processing":       processing,
+		"batches":          batches,
+		"processing_count": len(processing),
+		"batch_count":      len(batches),
+		"count":            len(processing) + len(batches),
+	})
+}
+
+type pendingBatchDTO struct {
+	ID         string           `json:"id"`
+	EntryID    string           `json:"entry_id"`
+	SourceType string           `json:"source_type"`
+	Version    int              `json:"version"`
+	CreatedAt  time.Time        `json:"created_at"`
+	MessageAt  time.Time        `json:"message_at"`
+	Events     []map[string]any `json:"events"`
+}
+
+func (a *App) loadPendingBatches(ctx context.Context, userID string) ([]pendingBatchDTO, error) {
+	rows, err := a.db.Query(ctx, `SELECT b.id::text,b.entry_id::text,b.version,b.created_at,j.source_sent_at,j.source_type,
+		e.id::text,e.kind,e.occurred_at,e.time_precision,e.attributes,e.revision
+		FROM event_batches b JOIN journal_entries j ON j.id=b.entry_id JOIN health_events e ON e.batch_id=b.id
+		WHERE b.user_id=$1 AND b.status='pending' AND e.status='pending' AND e.deleted_at IS NULL ORDER BY b.created_at DESC,e.occurred_at`, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	ordered := []*pendingBatchDTO{}
+	index := map[string]*pendingBatchDTO{}
 	for rows.Next() {
 		var id, entryID, source, eventID, kind, precision string
 		var version, revision int
 		var created, messageAt, occurred time.Time
 		var data json.RawMessage
-		_ = rows.Scan(&id, &entryID, &version, &created, &messageAt, &source, &eventID, &kind, &occurred, &precision, &data, &revision)
+		if err := rows.Scan(&id, &entryID, &version, &created, &messageAt, &source, &eventID, &kind, &occurred, &precision, &data, &revision); err != nil {
+			return nil, err
+		}
 		item := index[id]
 		if item == nil {
-			item = &batch{ID: id, EntryID: entryID, Version: version, CreatedAt: created, MessageAt: messageAt, SourceType: source}
+			item = &pendingBatchDTO{ID: id, EntryID: entryID, Version: version, CreatedAt: created, MessageAt: messageAt, SourceType: source}
 			index[id] = item
 			ordered = append(ordered, item)
 		}
 		item.Events = append(item.Events, map[string]any{"id": eventID, "kind": kind, "occurred_at": occurred, "time_precision": precision, "data": data, "revision": revision})
 	}
-	writeJSON(w, 200, map[string]any{"batches": ordered, "count": len(ordered)})
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	result := make([]pendingBatchDTO, 0, len(ordered))
+	for _, item := range ordered {
+		result = append(result, *item)
+	}
+	return result, nil
+}
+
+func (a *App) loadProcessingEntries(ctx context.Context, userID string) ([]map[string]any, error) {
+	rows, err := a.db.Query(ctx, `SELECT id::text,source_type,source_sent_at,processing_status
+		FROM journal_entries
+		WHERE user_id=$1 AND deleted_at IS NULL AND processing_status IN ('queued','processing','failed')
+		ORDER BY source_sent_at DESC
+		LIMIT 50`, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []map[string]any{}
+	for rows.Next() {
+		var id, sourceType, status string
+		var sentAt time.Time
+		if err := rows.Scan(&id, &sourceType, &sentAt, &status); err != nil {
+			return nil, err
+		}
+		items = append(items, map[string]any{
+			"id":                id,
+			"source_type":       sourceType,
+			"source_sent_at":    sentAt,
+			"processing_status": status,
+		})
+	}
+	return items, rows.Err()
 }
 
 func (a *App) sourceEntry(w http.ResponseWriter, r *http.Request) {

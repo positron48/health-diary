@@ -54,6 +54,11 @@ func (w *Worker) RunOnce(ctx context.Context) error {
 		reference = *payload.ReferenceAt
 	}
 	if err := w.extract(ctx, payload.EntryID, reference, job.Attempts); err != nil {
+		status := "processing"
+		if job.Attempts >= job.MaxAttempts {
+			status = "failed"
+		}
+		_, _ = w.db.Exec(ctx, `UPDATE journal_entries SET processing_status=$2 WHERE id=$1 AND processing_status IN ('queued','processing')`, payload.EntryID, status)
 		if finishErr := w.queue.Finish(ctx, job.ID, true, "extraction_failed"); finishErr != nil {
 			return finishErr
 		}
@@ -151,6 +156,9 @@ func (w *Worker) extract(ctx context.Context, entryID string, reference time.Tim
 	if err := tx.QueryRow(ctx, `SELECT e.user_id::text,u.telegram_user_id,u.timezone,e.source_sent_at,e.raw_text_ciphertext FROM journal_entries e JOIN users u ON u.id=e.user_id WHERE e.id=$1 AND e.deleted_at IS NULL FOR UPDATE`, entryID).Scan(&userID, &telegramUserID, &timezone, &sourceSentAt, &sealed); err != nil {
 		return err
 	}
+	if _, err := tx.Exec(ctx, `UPDATE journal_entries SET processing_status='processing' WHERE id=$1`, entryID); err != nil {
+		return err
+	}
 	if reference.IsZero() {
 		reference = sourceSentAt
 	}
@@ -167,6 +175,9 @@ func (w *Worker) extract(ctx context.Context, entryID string, reference time.Tim
 	}
 	if err := llm.ValidateResult(result); err != nil {
 		return fmt.Errorf("validate extraction result: %w", err)
+	}
+	for index := range result.Events {
+		delete(result.Events[index].Data, "comment")
 	}
 	validatedResult, err := json.Marshal(result)
 	if err != nil {

@@ -184,11 +184,27 @@ Returns common envelope, typed data, provenance metadata and current revision:
   "revision": 2,
   "occurred_at": "2026-07-21T12:00:00Z",
   "time_precision": "approximate",
-  "data": {"intensity": 5}
+  "data": {
+    "intensity": 5,
+    "comment": "после кофе стало хуже"
+  }
 }
 ```
 
-Only supplied top-level fields change. Nested `data` is merged into existing attributes: omitted keys are preserved, explicit `null` clears a field. Same domain validation as LLM output. Response `409 revision_conflict` for stale edit. After a successful pain or medication edit the episode projection is recalculated.
+Activity example:
+
+```json
+{
+  "revision": 1,
+  "data": {
+    "activity_type": "бег",
+    "duration_minutes": 40,
+    "intensity": "moderate"
+  }
+}
+```
+
+Only supplied top-level fields change. Nested `data` is merged into existing attributes: omitted keys are preserved, explicit `null` clears a field. Same domain validation as LLM output. `data.comment` is user-authored (max 1000 runes); empty string from clients should be sent as `null` to clear. Activity `intensity` is `low|moderate|high`, not the pain 0..10 scale. Response `409 revision_conflict` for stale edit. After a successful pain or medication edit the episode projection is recalculated.
 
 ### `DELETE /events/{id}`
 
@@ -200,11 +216,34 @@ Restores within configurable undo window if related episode remains consistent.
 
 ## 5. Batches and parsing
 
+### `GET /inbox`
+
+Single poll endpoint for the web «Входящие» screen:
+
+```json
+{
+  "processing": [
+    {
+      "id": "uuid",
+      "source_type": "web",
+      "source_sent_at": "2026-07-22T19:30:00Z",
+      "processing_status": "queued"
+    }
+  ],
+  "batches": [],
+  "processing_count": 1,
+  "batch_count": 0,
+  "count": 1
+}
+```
+
+`processing` lists `journal_entries` with `processing_status` in `queued`, `processing` or `failed` (newest first). Source plaintext is absent. `batches` matches pending confirmation batches (same shape as `GET /batches?status=pending`). `count` is `processing_count + batch_count` for nav badges. Clients may poll about every 2s while the inbox is visible.
+
 ### `GET /batches?status=pending`
 
 Pending confirmation inbox. Each batch includes source-entry ID, source type,
 message timestamp, batch version and candidate event time precision. Source
-text is deliberately absent.
+text is deliberately absent. Prefer `GET /inbox` when the UI also needs in-flight entries.
 
 ### `POST /batches/{id}/confirm`
 

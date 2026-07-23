@@ -107,6 +107,11 @@ export const eventRegistry: Record<string, Descriptor> = {
     fields: [
       { key: 'activity_type', label: 'Вид' },
       { key: 'duration_minutes', label: 'Продолжительность', format: (v) => `${value(v)} мин` },
+      {
+        key: 'intensity',
+        label: 'Интенсивность',
+        format: (v) => ({ low: 'низкая', moderate: 'средняя', high: 'высокая' }[String(v)] || value(v)),
+      },
     ],
   },
   wellbeing: {
@@ -175,6 +180,12 @@ export const descriptorFor = (kind: string, data: Record<string, unknown> = {}) 
       return { ...base, label: `Приём: ${name}` }
     }
   }
+  if (kind === 'activity') {
+    const activityType = data.activity_type
+    if (typeof activityType === 'string' && activityType.trim()) {
+      return { ...base, label: `Активность · ${activityType}` }
+    }
+  }
   return base
 }
 
@@ -182,16 +193,26 @@ export function eventFields(event: HealthEvent) {
   const data = event.data || event.attributes || {}
   const descriptor = descriptorFor(event.kind, data)
   const seen = new Set<string>()
-  return descriptor.fields
+  const fields = descriptor.fields
     .filter((field) => {
       if (data[field.key] === undefined || seen.has(field.label)) return false
       if (field.key === 'name' && data.name_raw !== undefined) return false
       if (field.key === 'normalized_name' && data.name_raw) return false
       if (field.key === 'dose_unit') return false
+      if (field.key === 'activity_type' && kindTitleUsesActivityType(event.kind, data)) return false
       seen.add(field.label)
       return true
     })
     .map((field) => ({ label: field.label, value: field.format?.(data[field.key], data) ?? value(data[field.key]) }))
+  const comment = data.comment
+  if (typeof comment === 'string' && comment.trim()) {
+    fields.push({ label: 'Комментарий', value: comment })
+  }
+  return fields
+}
+
+function kindTitleUsesActivityType(kind: string, data: Record<string, unknown>) {
+  return kind === 'activity' && typeof data.activity_type === 'string' && data.activity_type.trim() !== ''
 }
 
 export const eventTime = (event: HealthEvent, timeZone?: string) =>

@@ -33,3 +33,15 @@ func TestConfirmationTextLocalizesLocationsWithoutInventedIntensity(t *testing.T
 		t.Fatalf("must not invent intensity: %s", text)
 	}
 }
+
+func TestConfirmationTextShowsActivityDetails(t *testing.T) {
+	text := confirmationText([]llm.Event{
+		{Kind: "activity", OccurredAt: "2026-07-21T12:00:00Z", TimePrecision: "approximate", Data: map[string]any{
+			"activity_type": "бег", "duration_minutes": float64(40), "intensity": "moderate",
+		}},
+	}, "Europe/Moscow")
+	expected := "Активность — бег, 40 мин, средняя интенсивность, около 15:00"
+	if !strings.Contains(text, expected) {
+		t.Fatalf("confirmation text missing %q: %s", expected, text)
+	}
+}

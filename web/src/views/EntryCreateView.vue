@@ -20,8 +20,8 @@ async function submit() {
   busy.value = true
   error.value = ''
   try {
-    await journalApi.createEntry(value, globalThis.crypto.randomUUID(), date.value || undefined)
-    await router.push('/pending')
+    const created = await journalApi.createEntry(value, globalThis.crypto.randomUUID(), date.value || undefined)
+    await router.push({ path: '/pending', query: { entry: created.entry_id } })
   } catch (e) {
     error.value = (e as Error).message
   } finally {

@@ -41,6 +41,7 @@ const selectedQualities = ref<string[]>([])
 const descriptor = computed(() => descriptorFor(event.value?.kind || 'note', event.value?.data || event.value?.attributes || {}))
 const isPain = computed(() => event.value?.kind === 'pain_observation' || event.value?.kind === 'pain')
 const isMed = computed(() => event.value?.kind === 'medication_intake')
+const isActivity = computed(() => event.value?.kind === 'activity')
 
 function asList(value: unknown) {
   return Array.isArray(value) ? value.map(String) : []
@@ -64,6 +65,9 @@ async function load() {
       dose_value: data.dose_value == null ? '' : String(data.dose_value),
       dose_unit: data.dose_unit == null ? '' : String(data.dose_unit),
       effect_rating: data.effect_rating == null ? '' : String(data.effect_rating),
+      activity_type: data.activity_type == null ? '' : String(data.activity_type),
+      duration_minutes: data.duration_minutes == null ? '' : String(data.duration_minutes),
+      comment: data.comment == null ? '' : String(data.comment),
     })
     selectedLocations.value = asList(data.locations)
     selectedQualities.value = asList(data.qualities)
@@ -90,12 +94,15 @@ async function save() {
   Object.keys(validation).forEach((key) => delete validation[key])
   const data: Record<string, unknown> = {}
   const patch: Record<string, unknown> = { revision: event.value.revision }
-  const numericKeys = new Set(['intensity', 'functional_impact', 'dose_value', 'effect_rating'])
+  const numericKeys = new Set(['intensity', 'functional_impact', 'dose_value', 'effect_rating', 'duration_minutes'])
+  const stringKeys = new Set(['phase', 'laterality', 'name_raw', 'dose_unit', 'activity_type', 'comment'])
   for (const [key, val] of Object.entries(fields)) {
     if (val === original[key]) continue
     if (key === 'occurred_at') patch.occurred_at = localInputToUTC(val, session.user.value?.timezone || 'Europe/Moscow')
     else if (key === 'time_precision') patch.time_precision = val
-    else if (['phase', 'laterality', 'name_raw', 'dose_unit'].includes(key) || numericKeys.has(key)) {
+    else if (key === 'intensity' && isActivity.value) {
+      data.intensity = val === '' ? null : val
+    } else if (stringKeys.has(key) || (numericKeys.has(key) && !(key === 'intensity' && isActivity.value))) {
       data[key] = val === '' ? null : (numericKeys.has(key) ? Number(val) : val)
     }
   }
@@ -218,6 +225,29 @@ onMounted(load)
           </select>
         </label>
       </template>
+      <template v-else-if="isActivity">
+        <label class="field">Вид активности
+          <input v-model="fields.activity_type" type="text" placeholder="Например: бег, йога"/>
+          <span class="field-error">{{ validation['data.activity_type'] }}</span>
+        </label>
+        <label class="field">Продолжительность (мин)
+          <input v-model="fields.duration_minutes" type="number" min="1" step="1" placeholder="Не указано"/>
+          <span class="field-error">{{ validation['data.duration_minutes'] }}</span>
+        </label>
+        <label class="field">Интенсивность
+          <select v-model="fields.intensity">
+            <option value="">Не указано</option>
+            <option value="low">Низкая</option>
+            <option value="moderate">Средняя</option>
+            <option value="high">Высокая</option>
+          </select>
+          <span class="field-error">{{ validation['data.intensity'] }}</span>
+        </label>
+      </template>
+      <label class="field">Комментарий
+        <textarea v-model="fields.comment" rows="3" maxlength="1000" placeholder="Произвольная заметка к записи"/>
+        <span class="field-error">{{ validation['data.comment'] }}</span>
+      </label>
       <div class="cluster">
         <UiButton :busy="saving">Сохранить</UiButton>
         <UiButton v-if="entryIdOf(event)" type="button" variant="ghost" @click="openSource">Исходная запись</UiButton>

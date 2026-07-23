@@ -77,6 +77,17 @@ func eventDescription(event llm.Event, loc *time.Location) string {
 			parts = append(parts, "возвращение")
 		}
 	}
+	if event.Kind == "activity" {
+		if activityType := stringValue(data["activity_type"]); activityType != "" {
+			parts = append(parts, activityType)
+		}
+		if duration := stringValue(data["duration_minutes"]); duration != "" {
+			parts = append(parts, duration+" мин")
+		}
+		if intensity := activityIntensityLabel(stringValue(data["intensity"])); intensity != "" {
+			parts = append(parts, intensity)
+		}
+	}
 	if event.Kind == "wellbeing" {
 		if score := stringValue(data["motivation_score"]); score != "" {
 			parts = append(parts, "мотивация "+score+"/10")
@@ -150,6 +161,19 @@ func lateralityLabel(value string) string {
 		return "с обеих сторон"
 	case "center":
 		return "по центру"
+	default:
+		return ""
+	}
+}
+
+func activityIntensityLabel(value string) string {
+	switch value {
+	case "low":
+		return "низкая интенсивность"
+	case "moderate":
+		return "средняя интенсивность"
+	case "high":
+		return "высокая интенсивность"
 	default:
 		return ""
 	}

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 )
@@ -74,5 +75,31 @@ func TestParseRangeUsesInclusiveLocalDates(t *testing.T) {
 	loc, _ := time.LoadLocation("Europe/Moscow")
 	if from.In(loc).Format("15:04") != "05:00" || to.In(loc).Format("15:04") != "05:00" {
 		t.Fatalf("range must use configured day start: from=%v to=%v", from, to)
+	}
+}
+
+func TestValidateEventActivityIntensityAndComment(t *testing.T) {
+	badIntensity := eventDTO{
+		Kind: "activity", OccurredAt: time.Now(), TimePrecision: "exact",
+		Data: json.RawMessage(`{"intensity":"hard","duration_minutes":20}`),
+	}
+	fields := validateEvent(badIntensity)
+	if fields["data.intensity"] == "" {
+		t.Fatalf("expected intensity validation: %#v", fields)
+	}
+	ok := eventDTO{
+		Kind: "activity", OccurredAt: time.Now(), TimePrecision: "exact",
+		Data: json.RawMessage(`{"activity_type":"бег","duration_minutes":40,"intensity":"moderate","comment":"после обеда"}`),
+	}
+	if got := validateEvent(ok); len(got) != 0 {
+		t.Fatalf("unexpected fields: %#v", got)
+	}
+	longComment := strings.Repeat("а", 1001)
+	comment := eventDTO{
+		Kind: "note", OccurredAt: time.Now(), TimePrecision: "exact",
+		Data: json.RawMessage(`{"comment":"` + longComment + `"}`),
+	}
+	if fields := validateEvent(comment); fields["data.comment"] == "" {
+		t.Fatal("expected comment length validation")
 	}
 }

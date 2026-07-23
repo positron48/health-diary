@@ -146,6 +146,14 @@ Medication rules:
 - `normalized_name` is optional and must not invent a drug class diagnosis.
 - One intake statement may produce one `medication_intake`; quantity “1 цитрамон” without milligrams leaves `dose_value` null.
 
+Activity rules:
+
+- Map exercise/walk/sport to `activity`.
+- `activity_type` is free text from the diary (e.g. бег, йога); null when unspecified.
+- `duration_minutes` only when an explicit duration is stated; never invent.
+- `intensity` is only `low`, `moderate`, `high`, or null — never the pain 0..10 scale.
+- Do not emit `comment` on any event; user annotations are web-only.
+
 The final JSON Schema must set `additionalProperties: false` recursively and enumerate kinds/units/actions/phases.
 
 ## 7. Prompt rules
@@ -155,6 +163,8 @@ The prompt must explicitly require:
 - Extract only facts stated or unambiguously relative to supplied current time and timezone.
 - Use `null` for missing dose, time, intensity, duration and effect.
 - Do not invent intensity from qualitative words alone (“слегка”, “сильнее”) unless a numeric score is stated.
+- For activity intensity use only low/moderate/high when clearly stated; leave null otherwise.
+- Never output `data.comment`; that field is reserved for user web edits.
 - Do not create a pain event from a negation such as “на утро не болела”; that closes or ends the prior episode.
 - Do not infer a diagnosis, trigger, medication class or causal relationship from symptoms.
 - Preserve approximate time precision.

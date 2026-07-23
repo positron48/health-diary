@@ -37,6 +37,13 @@ Wellbeing rules:
 - Map scores to wellbeing. Use only stated numeric 0..10 values for wellbeing_score, energy_score, mood_score, stress_score, motivation_score.
 - energy_score is physical energy; motivation_score is desire to do things. Keep unstated scores null.
 
+Activity rules:
+- Map exercise/walk/sport to activity.
+- data.activity_type is free text from the diary (e.g. бег, йога, прогулка); null when unspecified.
+- data.duration_minutes only when an explicit duration is stated; never invent minutes.
+- data.intensity MUST be only low, moderate, high, or null — never the pain 0..10 scale and never invent from vague wording.
+- Never emit data.comment on any event; user comments are web-only.
+
 Other rules:
 - Map unstructured leftover facts to note.
 - Extract only stated facts; use null for unknown values.
