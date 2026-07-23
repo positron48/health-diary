@@ -42,6 +42,34 @@ const phaseLabel = (phase: unknown) => {
   }
 }
 
+const contextPhaseLabel = (phase: unknown) => {
+  switch (phase) {
+    case 'start': return 'начало'
+    case 'update': return 'продолжение'
+    case 'end': return 'окончание'
+    case 'return': return 'возвращение'
+    default: return ''
+  }
+}
+
+const contextTypeLabel = (periodType: unknown) => {
+  switch (periodType) {
+    case 'trip': return 'Поездка'
+    case 'vacation': return 'Отпуск'
+    case 'temporary_stay': return 'Временное пребывание'
+    case 'relocation': return 'Переезд'
+    case 'other': return 'Контекст'
+    default: return typeof periodType === 'string' && periodType ? periodType : 'Контекст'
+  }
+}
+
+const formatLocalDate = (raw: unknown) => {
+  if (typeof raw !== 'string' || !raw) return value(raw)
+  const day = raw.length >= 10 ? raw.slice(0, 10) : raw
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return String(raw)
+  return new Intl.DateTimeFormat('ru-RU', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' }).format(new Date(`${day}T12:00:00Z`))
+}
+
 const lateralityFormat = (v: unknown) =>
   ({ left: 'слева', right: 'справа', bilateral: 'с обеих сторон', center: 'по центру', unknown: 'Не указано' }[String(v)] || value(v))
 
@@ -133,10 +161,10 @@ export const eventRegistry: Record<string, Descriptor> = {
     icon: MapPin,
     tone: 'context',
     fields: [
-      { key: 'period_type', label: 'Тип' },
+      { key: 'period_type', label: 'Тип', format: (v) => contextTypeLabel(v) },
       { key: 'place_label', label: 'Город' },
-      { key: 'phase', label: 'Фаза' },
-      { key: 'ended_on', label: 'До' },
+      { key: 'phase', label: 'Фаза', format: (v) => contextPhaseLabel(v) || value(v) },
+      { key: 'ended_on', label: 'До', format: formatLocalDate },
     ],
   },
   food_drink: {
@@ -186,6 +214,11 @@ export const descriptorFor = (kind: string, data: Record<string, unknown> = {}) 
       return { ...base, label: `Активность · ${activityType}` }
     }
   }
+  if (kind === 'life_context') {
+    const type = contextTypeLabel(data.period_type)
+    const place = typeof data.place_label === 'string' ? data.place_label.trim() : ''
+    return { ...base, label: place ? `${type} · ${place}` : type }
+  }
   return base
 }
 
@@ -200,10 +233,15 @@ export function eventFields(event: HealthEvent) {
       if (field.key === 'normalized_name' && data.name_raw) return false
       if (field.key === 'dose_unit') return false
       if (field.key === 'activity_type' && kindTitleUsesActivityType(event.kind, data)) return false
+      if (field.key === 'period_type' && event.kind === 'life_context') return false
+      if (field.key === 'phase' && event.kind === 'life_context' && !contextPhaseLabel(data.phase)) return false
       seen.add(field.label)
       return true
     })
     .map((field) => ({ label: field.label, value: field.format?.(data[field.key], data) ?? value(data[field.key]) }))
+  if (event.kind === 'life_context' && data.ended_on == null && event.ended_at) {
+    fields.push({ label: 'До', value: formatLocalDate(event.ended_at) })
+  }
   const comment = data.comment
   if (typeof comment === 'string' && comment.trim()) {
     fields.push({ label: 'Комментарий', value: comment })

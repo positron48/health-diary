@@ -92,13 +92,25 @@ function stripeLayers(day: CalendarDay) {
 function metric(day: CalendarDay) {
   if (!day.has_data && !day.has_pending) return 'Нет записей'
   const all = signals(day)
-  const context = active('context') && day.context ? `${day.context.place_label || day.context.period_type}` : ''
+  const context = active('context') && day.context
+    ? `${day.context.place_label || contextTypeLabel(day.context.period_type)}`
+    : ''
   return [context, ...all.map((item) => item.label)].filter(Boolean).join(' · ') || 'Есть запись'
 }
 
 function visibleSignals(day: CalendarDay) {
   const all = signals(day)
   return { shown: all.slice(0, 3), overflow: Math.max(0, all.length - 3) }
+}
+
+function contextTypeLabel(periodType?: string) {
+  switch (periodType) {
+    case 'trip': return 'Поездка'
+    case 'vacation': return 'Отпуск'
+    case 'temporary_stay': return 'Временное пребывание'
+    case 'relocation': return 'Переезд'
+    default: return periodType || 'Контекст'
+  }
 }
 
 function toggleLayer(layer: CalendarLayer) {
@@ -181,7 +193,7 @@ onMounted(() => { if (selected.value) preview.load() })
           <strong>{{ Number(day.date.slice(-2)) }}</strong>
           <span v-if="active('context') && day.context" class="context-ribbon" :class="day.context.segment">
             <MapPin :size="12" aria-hidden="true" />
-            <span v-if="day.context.segment === 'start'" class="signal-text">{{ day.context.place_label || day.context.period_type }}</span>
+            <span class="signal-text">{{ day.context.place_label || contextTypeLabel(day.context.period_type) }}</span>
           </span>
           <span v-if="day.has_data" class="signals">
             <span v-for="signal in visibleSignals(day).shown" :key="signal.key" class="signal" :class="`tone-${signal.tone}`" :title="signal.label">
@@ -198,7 +210,7 @@ onMounted(() => { if (selected.value) preview.load() })
     <aside v-if="selected" class="day-pane card">
       <h2>{{ new Date(`${selected}T12:00:00`).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' }) }}</h2>
       <p v-if="data?.days.find((d) => d.date === selected)?.context" class="muted">
-        Контекст: {{ data.days.find((d) => d.date === selected)?.context?.place_label || data.days.find((d) => d.date === selected)?.context?.period_type }}
+        Контекст: {{ data.days.find((d) => d.date === selected)?.context?.place_label || contextTypeLabel(data.days.find((d) => d.date === selected)?.context?.period_type) }}
       </p>
       <p v-if="data?.days.find((d) => d.date === selected)?.weather" class="muted">
         Погода: {{ data.days.find((d) => d.date === selected)?.weather?.temp_mean_c != null ? `${Math.round(Number(data.days.find((d) => d.date === selected)?.weather?.temp_mean_c))}°` : 'нет данных' }}

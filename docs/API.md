@@ -120,7 +120,7 @@ Response:
 }
 ```
 
-Compact UI rules: pain shows max intensity without `/10` or episode count; medication shows intake count with pill icon only; context is a continuous ribbon; weather shows one temperature plus icon. No raw text in calendar response.
+Compact UI rules: pain shows max intensity without `/10` or episode count; medication shows intake count with pill icon only; context is a continuous ribbon with city/type on each day of the period; weather shows one temperature plus icon. No raw text in calendar response.
 
 ### `GET /places/search?q=Липецк`
 

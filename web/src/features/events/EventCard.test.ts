@@ -48,4 +48,23 @@ describe('EventCard', () => {
     expect(wrapper.text()).toContain('цитрамон')
     expect(wrapper.text()).not.toContain('"name_raw"')
   })
+
+  it('показывает поездку с городом и датой окончания из ended_at', () => {
+    const trip = {
+      id: '3',
+      kind: 'life_context',
+      occurred_at: '2026-07-19T09:00:00Z',
+      ended_at: '2026-07-22T21:00:00Z',
+      time_precision: 'date_only' as const,
+      revision: 1,
+      data: { period_type: 'trip', place_label: 'Новосибирск', phase: 'start' },
+    }
+    expect(descriptorFor(trip.kind, trip.data).label).toBe('Поездка · Новосибирск')
+    const fields = eventFields(trip)
+    expect(fields.some((field) => field.label === 'До' && field.value.includes('22'))).toBe(true)
+    expect(fields.some((field) => field.label === 'Тип')).toBe(false)
+    const wrapper = mount(EventCard, { props: { event: trip } })
+    expect(wrapper.text()).toContain('Поездка · Новосибирск')
+    expect(wrapper.text()).toContain('До')
+  })
 })

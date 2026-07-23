@@ -221,7 +221,7 @@ Each day cell stays compact:
 - sleep: icon + `7ч`;
 - wellbeing/motivation: icon + score;
 - weather: icon + one temperature;
-- context: thin continuous ribbon; city/type label only at the visible segment start.
+- context: thin continuous ribbon with MapPin; city or period type label on every day of the period (not only the start segment).
 
 Present layers share a segmented color stripe (not a blended gradient). Empty cell means `Нет записей`. Switching layers must preserve month and selected day and must not refetch. Selecting a day loads a no-store preview of its ten latest confirmed events.
 
