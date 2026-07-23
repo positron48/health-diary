@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
+import { Plus } from '@lucide/vue'
 import { journalApi } from '../api/journal'
 import type { HealthEvent } from '../api/types'
 import { useAsyncState } from '../composables/useAsyncState'
@@ -18,11 +19,15 @@ onMounted(()=>load())
 </script>
 <template>
   <div class="page stack">
-    <header>
-      <p class="eyebrow">Хронология</p>
-      <h1>{{ new Date(`${date}T12:00:00`).toLocaleDateString('ru-RU',{dateStyle:'long'}) }}</h1>
-      <p class="muted">{{ data?.events.length || 0 }} событий<span v-if="data?.pending_count"> · {{data.pending_count}} ждут проверки</span></p>
-      <RouterLink class="button add-entry" :to="`/entries/new?date=${date}`">Добавить запись</RouterLink>
+    <header class="day-header">
+      <div>
+        <p class="eyebrow">Хронология</p>
+        <h1>{{ new Date(`${date}T12:00:00`).toLocaleDateString('ru-RU',{dateStyle:'long'}) }}</h1>
+        <p class="muted">{{ data?.events.length || 0 }} событий<span v-if="data?.pending_count"> · {{data.pending_count}} ждут проверки</span></p>
+      </div>
+      <RouterLink class="button icon-add" :to="`/entries/new?date=${date}`" aria-label="Добавить запись" title="Добавить запись">
+        <Plus :size="20" />
+      </RouterLink>
     </header>
     <StatePanel v-if="loading" kind="loading"/>
     <StatePanel v-else-if="error" kind="error" :message="error" @retry="load()"/>
@@ -39,5 +44,9 @@ onMounted(()=>load())
   </div>
 </template>
 <style scoped>
-.add-entry { display: inline-flex; align-items: center; text-decoration: none; }
+.day-header { display: flex; justify-content: space-between; align-items: flex-start; gap: var(--s3); }
+.icon-add {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 44px; min-height: 44px; padding-inline: var(--s3); text-decoration: none; flex-shrink: 0;
+}
 </style>

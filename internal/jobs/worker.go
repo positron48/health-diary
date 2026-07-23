@@ -3,6 +3,7 @@ package jobs
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
@@ -11,6 +12,7 @@ import (
 	"health-diary/internal/llm"
 	"health-diary/internal/weather"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -154,6 +156,10 @@ func (w *Worker) extract(ctx context.Context, entryID string, reference time.Tim
 	var timezone string
 	var sourceSentAt time.Time
 	if err := tx.QueryRow(ctx, `SELECT e.user_id::text,u.telegram_user_id,u.timezone,e.source_sent_at,e.raw_text_ciphertext FROM journal_entries e JOIN users u ON u.id=e.user_id WHERE e.id=$1 AND e.deleted_at IS NULL FOR UPDATE`, entryID).Scan(&userID, &telegramUserID, &timezone, &sourceSentAt, &sealed); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			// Entry was deleted from the inbox while the job was queued or running.
+			return nil
+		}
 		return err
 	}
 	if _, err := tx.Exec(ctx, `UPDATE journal_entries SET processing_status='processing' WHERE id=$1`, entryID); err != nil {

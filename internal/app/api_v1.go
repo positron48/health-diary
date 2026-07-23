@@ -771,6 +771,83 @@ func (a *App) sourceEntry(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]any{"id": r.PathValue("id"), "source_type": source, "source_sent_at": sent, "text": string(plain)})
 }
 
+// deleteEntry soft-deletes an in-flight journal entry from the inbox
+// (queued/processing/failed). Pending candidate events and confirmation
+// batches for the same entry are rejected; extraction jobs are cancelled.
+// Parsed entries that already produced a pending batch must be rejected via
+// POST /batches/{id}/reject instead.
+func (a *App) deleteEntry(w http.ResponseWriter, r *http.Request) {
+	user := sessionUser(r)
+	entryID := r.PathValue("id")
+	tx, err := a.db.Begin(r.Context())
+	if err != nil {
+		writeAPIError(w, r, 500, "internal_error", "Не удалось удалить запись", nil)
+		return
+	}
+	defer tx.Rollback(r.Context())
+
+	var status string
+	var deletedAt *time.Time
+	err = tx.QueryRow(r.Context(), `SELECT processing_status, deleted_at FROM journal_entries
+		WHERE id=$1 AND user_id=$2 FOR UPDATE`, entryID, user.ID).Scan(&status, &deletedAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		writeAPIError(w, r, 404, "entry_not_found", "Запись не найдена", nil)
+		return
+	}
+	if err != nil {
+		writeAPIError(w, r, 500, "internal_error", "Не удалось удалить запись", nil)
+		return
+	}
+	if deletedAt != nil {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+	switch status {
+	case "queued", "processing", "failed":
+	default:
+		writeAPIError(w, r, 409, "entry_not_deletable", "Запись уже распознана. Отклоните пакет во входящих.", nil)
+		return
+	}
+
+	tag, err := tx.Exec(r.Context(), `UPDATE journal_entries
+		SET deleted_at=now(), processing_status='deleted'
+		WHERE id=$1 AND user_id=$2 AND deleted_at IS NULL
+		AND processing_status IN ('queued','processing','failed')`, entryID, user.ID)
+	if err != nil {
+		writeAPIError(w, r, 500, "internal_error", "Не удалось удалить запись", nil)
+		return
+	}
+	if tag.RowsAffected() != 1 {
+		writeAPIError(w, r, 409, "entry_not_deletable", "Запись уже изменилась", nil)
+		return
+	}
+
+	if _, err = tx.Exec(r.Context(), `UPDATE jobs SET status='terminal_failed', last_error_code='entry_deleted',
+		locked_at=NULL, locked_by=NULL, updated_at=now()
+		WHERE kind='extract_entry' AND payload->>'entry_id'=$1
+		AND status IN ('queued','retryable_failed','running')`, entryID); err != nil {
+		writeAPIError(w, r, 500, "internal_error", "Не удалось отменить обработку", nil)
+		return
+	}
+
+	if _, err = tx.Exec(r.Context(), `UPDATE event_batches SET status='rejected', version=version+1, rejected_at=now()
+		WHERE entry_id=$1 AND user_id=$2 AND status='pending'`, entryID, user.ID); err != nil {
+		writeAPIError(w, r, 500, "internal_error", "Не удалось удалить запись", nil)
+		return
+	}
+	if _, err = tx.Exec(r.Context(), `UPDATE health_events SET status='superseded', updated_at=now()
+		WHERE entry_id=$1 AND user_id=$2 AND status='pending'`, entryID, user.ID); err != nil {
+		writeAPIError(w, r, 500, "internal_error", "Не удалось удалить запись", nil)
+		return
+	}
+
+	if err := tx.Commit(r.Context()); err != nil {
+		writeAPIError(w, r, 500, "internal_error", "Не удалось удалить запись", nil)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 func (a *App) patchMe(w http.ResponseWriter, r *http.Request) {
 	var input struct {
 		Timezone *string         `json:"timezone"`

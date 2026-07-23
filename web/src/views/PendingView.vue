@@ -19,6 +19,7 @@ const loading = ref(true)
 const error = ref('')
 const busy = ref('')
 const rejectTarget = ref<PendingBatch | null>(null)
+const deleteTarget = ref<ProcessingEntry | null>(null)
 const conflict = ref('')
 const sourceId = ref<string | null>(null)
 const sourceSheet = ref<{ load: () => Promise<void> } | null>(null)
@@ -104,6 +105,29 @@ async function transition(batch: PendingBatch, action: 'confirm' | 'reject') {
   }
 }
 
+async function removeEntry(entry: ProcessingEntry) {
+  const serverIndex = data.value?.processing.findIndex((item) => item.id === entry.id) ?? -1
+  const optimisticIndex = optimistic.value.findIndex((item) => item.id === entry.id)
+  const serverSnapshot = serverIndex >= 0 ? data.value!.processing[serverIndex] : null
+  if (serverIndex >= 0) data.value!.processing.splice(serverIndex, 1)
+  if (optimisticIndex >= 0) optimistic.value.splice(optimisticIndex, 1)
+  busy.value = entry.id
+  conflict.value = ''
+  try {
+    await journalApi.deleteEntry(entry.id)
+    toast.show('Запись удалена из входящих')
+  } catch (e) {
+    if (serverSnapshot && data.value) data.value.processing.splice(serverIndex, 0, serverSnapshot)
+    if (optimisticIndex >= 0) optimistic.value.splice(optimisticIndex, 0, entry)
+    conflict.value = e instanceof ApiError && e.isConflict
+      ? 'Запись уже распознана или изменилась. Загрузите актуальную версию.'
+      : (e as Error).message
+  } finally {
+    busy.value = ''
+    deleteTarget.value = null
+  }
+}
+
 function openSource(entryId?: string | null) {
   sourceId.value = entryId || null
 }
@@ -166,6 +190,7 @@ onUnmounted(() => {
           <p>{{ processingLabel(entry.processing_status) }}</p>
           <div class="cluster">
             <UiButton variant="ghost" @click="openSource(entry.id)">Показать исходную запись</UiButton>
+            <UiButton variant="ghost" @click="deleteTarget=entry">Удалить</UiButton>
           </div>
         </article>
       </section>
@@ -191,6 +216,13 @@ onUnmounted(() => {
       <div class="cluster">
         <UiButton variant="danger" :busy="busy===rejectTarget?.id" @click="rejectTarget && transition(rejectTarget,'reject')">Отклонить</UiButton>
         <UiButton variant="secondary" @click="rejectTarget=null">Отмена</UiButton>
+      </div>
+    </UiDialog>
+    <UiDialog :open="!!deleteTarget" title="Удалить из входящих?" @close="deleteTarget=null">
+      <p>Запись исчезнет из входящих, распознавание будет отменено. Подтверждённые события дневника не затронуты.</p>
+      <div class="cluster">
+        <UiButton variant="danger" :busy="busy===deleteTarget?.id" @click="deleteTarget && removeEntry(deleteTarget)">Удалить</UiButton>
+        <UiButton variant="secondary" @click="deleteTarget=null">Отмена</UiButton>
       </div>
     </UiDialog>
     <SourceEntrySheet ref="sourceSheet" :entry-id="sourceId" @close="sourceId=null" />

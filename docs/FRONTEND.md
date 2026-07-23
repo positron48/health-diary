@@ -41,24 +41,22 @@ target product UI; these gaps are listed in section 10.
 
 ### 3.1 Primary navigation
 
-Use five destinations:
+Use four destinations plus settings:
 
 | Destination | Route | Purpose |
 |---|---|---|
-| Сегодня | `/today` | default screen: pending notice, open episode and today's timeline |
-| Календарь | `/calendar/:month?` | month review with display modes and selected day |
+| Календарь | `/calendar/:month?` | default home: month review with display modes and selected day |
 | Аналитика | `/analytics` | coverage-first 7/30/60/90-day summaries |
 | Входящие | `/pending` | in-flight recognition (`queued`/`processing`/`failed`) plus unconfirmed batches; badge shows combined count; polls ~2s while visible |
 | Ещё | `/settings` | timezone, privacy, export, sessions and destructive actions |
 
-On phones, show `Сегодня`, `Календарь`, `Аналитика` and `Входящие` in a fixed
-bottom bar; put settings behind the avatar/menu. On desktop, use a compact left
-sidebar with all five destinations. A pending-count badge must be visible in
-either navigation.
+On phones, show `Календарь`, `Аналитика` and `Входящие` in a fixed bottom bar;
+put settings behind the avatar/menu. On desktop, use a compact left sidebar with
+all four destinations. A pending-count badge must be visible in either
+navigation. Legacy `/today` redirects to `/calendar`.
 
-`Входящие` is a separate destination even though its first item is repeated on
-`Сегодня`: unconfirmed facts are the most important correctness task, but they
-must not crowd every screen.
+`Входящие` stays a separate destination: unconfirmed facts are the most important
+correctness task, but they must not crowd every screen.
 
 ### 3.2 Secondary routes
 
@@ -79,19 +77,15 @@ entry text in the URL or browser storage.
 
 ```text
 ┌──────────────────────────────┐
-│  Добрый вечер          (АФ)  │
-│  Среда, 22 июля              │
+│  Дневник                Ещё  │
 ├──────────────────────────────┤
-│  2 записи ждут проверки  →   │
-├──────────────────────────────┤
-│  Сегодня                     │
-│  15:10  Головная боль  6/10 │
-│  15:25  Ибупрофен      400 мг│
+│  Июль 2026            ‹  ›   │
+│  [Боль][Лекарства][Сон]...   │
 │                              │
-│  [Посмотреть весь день]      │
+│         month grid           │
+│                              │
 ├──────────────────────────────┤
-│ Сегодня Календарь Аналитика  │
-│              Входящие (2)    │
+│ Календарь  Аналитика  Входящие│
 └──────────────────────────────┘
 ```
 
@@ -104,11 +98,10 @@ entry text in the URL or browser storage.
 
 ```text
 ┌──────────────┬────────────────────────────┬──────────────────┐
-│ Сегодня      │  Июль 2026          ‹  ›   │  22 июля        │
-│ Календарь    │  [Обзор][Боль][Сон]...     │  Сводка дня     │
-│ Аналитика    │                            │  Хронология      │
-│ Входящие (2) │       month grid           │  событий         │
-│ Ещё          │                            │                  │
+│ Календарь    │  Июль 2026          ‹  ›   │  22 июля        │
+│ Аналитика    │  [Обзор][Боль][Сон]...     │  Сводка дня     │
+│ Входящие (2) │                            │  Хронология      │
+│ Ещё          │       month grid           │  событий         │
 └──────────────┴────────────────────────────┴──────────────────┘
 ```
 
@@ -188,18 +181,12 @@ wrong/expired/locked codes. Preserve the entered code after a temporary network
 failure. On desktop, show a QR code only later if it can be generated locally;
 it is not required for the first redesign.
 
-### 6.2 Today
+### 6.2 Home calendar
 
-Order content by urgency:
-
-1. compact pending banner with count;
-2. open-headache card with start time, last observation and `Открыть эпизод`;
-3. today's chronological events;
-4. quiet empty state with a Telegram deep link and one realistic example;
-5. small 7-day snapshot only after the timeline, not a dashboard wall.
-
-Do not add web capture in this phase: Telegram remains the documented primary
-entry channel and there is no web-create API contract yet.
+The authenticated default screen is the month calendar. Selecting a day opens
+the day pane or `/day/:date` timeline. Open episodes and pending notices are
+reachable from the day context and the `Входящие` badge, not a separate home
+timeline.
 
 ### 6.3 Pending inbox
 
@@ -212,6 +199,9 @@ Each extraction batch is one card. It shows:
 - source text only after `Показать исходную запись` and a protected no-store
   request.
 
+In-flight recognition cards (`queued`/`processing`/`failed`) additionally offer
+`Удалить`, which soft-deletes the source entry and removes it from the inbox.
+
 Confirmation removes the card optimistically and offers a short toast. Reject
 requires a lightweight confirmation sheet explaining that the source entry is
 retained. Correction opens a text flow only after its API exists; precise field
@@ -219,7 +209,8 @@ changes use the event edit form.
 
 ### 6.4 Calendar
 
-Header contains month navigation, `Сегодня` and multi-select layer chips:
+Header contains month navigation, `Сегодня`, an icon-only `Добавить запись`
+control (plus, top-right) and multi-select layer chips:
 `Боль`, `Лекарства`, `Активность`, `Сон`, `Самочувствие`, `Контекст`, `Погода`.
 
 Each day cell stays compact:
@@ -250,7 +241,8 @@ After soft deletion, keep a local undo toast for the supported restore window.
 If the server reports a revision conflict, keep the user's draft and offer
 `Загрузить актуальную версию` instead of silently overwriting it.
 
-Calendar and day timeline expose `Добавить запись`. The shared form accepts
+Calendar and day timeline expose `Добавить запись` as a compact plus icon in
+the page header (not a full-width primary button). The shared form accepts
 free-form text, keeps the draft only in memory and submits it for extraction.
 It must state that recognized facts appear in `Входящие` and do not affect
 analytics before confirmation.
@@ -277,6 +269,11 @@ After `POST /entries`, navigate to `/pending` and show an optimistic
 2s while the tab is visible; when the entry becomes a pending batch, replace
 the processing card with confirm/reject actions without a full page reload.
 Empty state only when both processing and batches are empty.
+
+Each processing card offers `Удалить` (with a confirmation sheet). It calls
+`DELETE /entries/{id}`, removes the card optimistically and cancels recognition.
+If the server returns `409`, reload the inbox — the entry may already have become
+a confirmation batch.
 
 ### 6.7 Episode detail
 
@@ -366,7 +363,6 @@ web/src/
 │   └── settings/               # export/privacy/session/delete sections
 ├── views/
 │   ├── LoginView.vue
-│   ├── TodayView.vue
 │   ├── CalendarView.vue
 │   ├── DayView.vue
 │   ├── EpisodeView.vue
@@ -542,7 +538,7 @@ edit with revision → analytics update → delete/undo → export
 ## 13. Definition of Done
 
 - The common confirmation task is completable with one primary action from
-  `Сегодня` or `Входящие`.
+  `Входящие`.
 - No internal enum or raw JSON is visible in ordinary UI.
 - Phone navigation never covers content and desktop calendar preserves context.
 - Unknown, absent and explicit negative observations are visually distinct.

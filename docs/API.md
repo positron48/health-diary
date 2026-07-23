@@ -253,6 +253,15 @@ Body includes `version`; confirms all candidate events atomically.
 
 Rejects candidate events but retains source entry according to retention policy.
 
+### `DELETE /entries/{id}`
+
+Soft-deletes an in-flight journal entry from the inbox. Allowed only when
+`processing_status` is `queued`, `processing` or `failed`. Sets
+`processing_status='deleted'` and `deleted_at`, cancels outstanding
+`extract_entry` jobs, and rejects any still-pending confirmation batch for the
+same entry. Response `204`. Already parsed entries that appear as confirmation
+batches must use `POST /batches/{id}/reject` instead (`409 entry_not_deletable`).
+
 ### `POST /entries/{id}/retry`
 
 Queues parsing after retryable failure. Rate-limited/idempotent.

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Activity, Bed, CloudSun, HeartPulse, MapPin, Pill, Smile, ChevronLeft, ChevronRight } from '@lucide/vue'
+import { Activity, Bed, CloudSun, HeartPulse, MapPin, Pill, Plus, Smile, ChevronLeft, ChevronRight } from '@lucide/vue'
 import { calendarApi, type CalendarLayer } from '../api/calendar'
 import { journalApi } from '../api/journal'
 import type { CalendarDay } from '../api/types'
@@ -126,6 +126,8 @@ function goToday() {
   router.push({ path: `/calendar/${fallbackMonth}`, query: { layers: layers.value.join(','), day: currentDate } })
 }
 
+const addEntryTo = computed(() => `/entries/new?date=${selected.value || currentDate}`)
+
 watch(month, () => load())
 watch(selected, (date) => { if (date) preview.load() })
 onMounted(() => load())
@@ -138,10 +140,13 @@ onMounted(() => { if (selected.value) preview.load() })
         <p class="eyebrow">История</p>
         <h1>{{ new Intl.DateTimeFormat('ru-RU', { month: 'long', year: 'numeric' }).format(new Date(`${month}-02`)) }}</h1>
       </div>
-      <div class="cluster">
+      <div class="cluster header-actions">
         <button class="button button--secondary icon-nav" aria-label="Предыдущий месяц" @click="move(-1)"><ChevronLeft :size="18" /></button>
         <button class="button button--secondary" @click="goToday">Сегодня</button>
         <button class="button button--secondary icon-nav" aria-label="Следующий месяц" @click="move(1)"><ChevronRight :size="18" /></button>
+        <RouterLink class="button icon-nav add-entry" :to="addEntryTo" aria-label="Добавить запись" title="Добавить запись">
+          <Plus :size="20" />
+        </RouterLink>
       </div>
     </header>
     <div class="layer-filters" aria-label="Слои календаря">
@@ -205,7 +210,6 @@ onMounted(() => { if (selected.value) preview.load() })
         <EventCard v-for="event in preview.data.value?.events" :key="event.id" :event="event" />
       </div>
       <div class="cluster preview-actions">
-        <RouterLink class="button" :to="`/entries/new?date=${selected}`">Добавить запись</RouterLink>
         <RouterLink :to="`/day/${selected}`">Открыть полную хронологию</RouterLink>
       </div>
     </aside>
@@ -214,8 +218,10 @@ onMounted(() => { if (selected.value) preview.load() })
 <style scoped>
 .calendar-page { display: grid; grid-template-columns: minmax(0, 1fr) 350px; gap: var(--s4); min-width: 0; }
 .calendar-header, .layer-filters, .legend, .month-grid { grid-column: 1; min-width: 0; }
-.calendar-header { display: flex; justify-content: space-between; }
-.icon-nav { display: inline-flex; align-items: center; justify-content: center; padding-inline: var(--s3); }
+.calendar-header { display: flex; justify-content: space-between; align-items: flex-start; gap: var(--s3); }
+.header-actions { flex-wrap: wrap; justify-content: flex-end; }
+.icon-nav { display: inline-flex; align-items: center; justify-content: center; padding-inline: var(--s3); min-width: 44px; min-height: 44px; }
+.add-entry { text-decoration: none; }
 .layer-filters { display: flex; flex-wrap: wrap; gap: var(--s2); }
 .layer-chip {
   border: 1px solid var(--border); background: var(--surface); color: var(--muted);
@@ -266,15 +272,13 @@ onMounted(() => { if (selected.value) preview.load() })
 .day-pane { grid-column: 2; grid-row: 1 / 6; }
 .preview-events { display: grid; gap: var(--s3); }
 .preview-actions { margin-top: var(--s4); }
-.preview-actions .button { text-decoration: none; }
 @media (max-width: 900px) {
   .calendar-page { display: block; }
   .calendar-page > * { margin-bottom: var(--s4); }
   .day-pane { display: block; }
 }
 @media (max-width: 520px) {
-  .calendar-header { display: grid; }
-  .calendar-header .cluster { margin-bottom: var(--s2); }
+  .calendar-header { align-items: center; }
   .day-cell { min-height: 64px; padding: 4px 4px 4px 8px; }
   .signal-text { display: none; }
 }

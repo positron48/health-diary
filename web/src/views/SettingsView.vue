@@ -75,7 +75,7 @@ async function save() {
 
 async function logout() {
   await authApi.logout()
-  session.expire('/today')
+  session.expire('/calendar')
   router.push('/login')
 }
 

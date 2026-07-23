@@ -5,7 +5,7 @@ import type { Session } from '../api/types'
 
 const user = ref<Session | null>(null)
 const ready = ref(false)
-const returnPath = ref('/today')
+const returnPath = ref('/calendar')
 export function useSession() {
   async function bootstrap() {
     try { user.value = await authApi.session() } catch { user.value = null } finally { ready.value = true }

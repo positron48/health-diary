@@ -125,6 +125,12 @@ This is a lightweight ADR registry. Update status and rationale before changing 
 - Decision: `GET /api/v1/inbox` returns in-flight journal entries (`queued`/`processing`/`failed`) plus pending confirmation batches. The web inbox polls ~2s while visible; no SSE/WebSocket for MVP.
 - Reason: after web/Telegram recognition the user must see “in processing” immediately and get parsed candidates without a full page reload, without adding a push channel.
 
+### ADR-020: Delete in-flight inbox entries
+
+- Status: accepted
+- Decision: authenticated users may soft-delete in-flight journal entries via `DELETE /api/v1/entries/{id}` when status is `queued`/`processing`/`failed`. The entry leaves the inbox (`processing_status='deleted'`, `deleted_at` set), extraction jobs are cancelled, and any still-pending batch for that entry is rejected. Parsed confirmation batches continue to use reject, not this endpoint.
+- Reason: stuck or unwanted recognition requests must be removable from the UI without waiting for LLM completion or inventing a separate purge tool.
+
 ## Deferred
 
 ### ADR-D02: Production domain

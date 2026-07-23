@@ -11,6 +11,7 @@ export const journalApi = {
   day: (date: string) => request<DayResponse>(`${API_BASE}/days/${date}`),
   pending: () => request<{ batches: PendingBatch[] }>(`${API_BASE}/batches?status=pending`),
   inbox: () => request<InboxResponse>(`${API_BASE}/inbox`),
+  deleteEntry: (id: string) => request<void>(`${API_BASE}/entries/${id}`, json('DELETE')),
   confirm: (id: string, version: number) => request<void>(`${API_BASE}/batches/${id}/confirm`, json('POST', { version })),
   reject: (id: string, version: number) => request<void>(`${API_BASE}/batches/${id}/reject`, json('POST', { version })),
   update: (id: string, patch: Record<string, unknown>) => request<HealthEvent>(`${API_BASE}/events/${id}`, json('PATCH', patch)),
