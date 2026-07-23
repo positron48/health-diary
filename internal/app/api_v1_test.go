@@ -78,6 +78,17 @@ func TestParseRangeUsesInclusiveLocalDates(t *testing.T) {
 	}
 }
 
+func TestNormalizeKindFilterRejectsNilSlice(t *testing.T) {
+	got := normalizeKindFilter(nil)
+	if got == nil || len(got) != 0 {
+		t.Fatalf("nil kind filter must become empty slice, got %#v", got)
+	}
+	kept := normalizeKindFilter([]string{"activity"})
+	if len(kept) != 1 || kept[0] != "activity" {
+		t.Fatalf("unexpected kinds: %#v", kept)
+	}
+}
+
 func TestValidateEventActivityIntensityAndComment(t *testing.T) {
 	badIntensity := eventDTO{
 		Kind: "activity", OccurredAt: time.Now(), TimePrecision: "exact",

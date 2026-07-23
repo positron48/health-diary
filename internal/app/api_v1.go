@@ -102,7 +102,7 @@ func (a *App) eventsV1(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	from, to, fields := parseRange(q.Get("from"), q.Get("to"), user.Timezone, user.DayStart)
-	kinds := q["kind"]
+	kinds := normalizeKindFilter(q["kind"])
 	for _, kind := range kinds {
 		if !eventKinds[kind] {
 			fields["kind"] = "unsupported event kind"
@@ -866,6 +866,16 @@ func nullJSON(raw json.RawMessage) any {
 		return nil
 	}
 	return raw
+}
+
+// normalizeKindFilter turns a missing query multi-value into an empty slice.
+// A nil []string is encoded by pgx as SQL NULL; cardinality(NULL)=0 is unknown
+// and would filter out every row from GET /events.
+func normalizeKindFilter(kinds []string) []string {
+	if kinds == nil {
+		return []string{}
+	}
+	return kinds
 }
 
 func parseRange(fromText, toText, timezone, dayStartText string) (*time.Time, *time.Time, map[string]string) {
