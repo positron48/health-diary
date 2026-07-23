@@ -421,15 +421,15 @@ Before building each dependent screen, align the current handlers with
 `docs/API.md` or deliberately update that specification. The current code and
 the documented target differ in these exact places:
 
-1. Pick one public prefix. The specification says `/api/v1`, while current
-   handlers use root paths such as `/events`, `/calendar` and `/analytics/summary`.
+1. Public API is only under `/api/v1`; SPA owns all other browser paths
+   (root aliases like `/calendar` and `/events` are gone).
 2. Make challenge naming consistent: documented `telegram_deep_link` versus
    current `telegram_url`.
 3. Return the documented JSON error envelope with stable `error.code` and field
    errors; current handlers mostly return plain text.
-4. `GET /calendar` must return local-day aggregates and honor `mode`; it
+4. `GET /api/v1/calendar` must return local-day aggregates and honor `mode`; it
    currently returns a flat event list.
-5. Add `GET /days/{date}`, event detail and `PATCH /events/{id}` before day/edit
+5. Add `GET /api/v1/days/{date}`, event detail and `PATCH /api/v1/events/{id}` before day/edit
    views are considered complete.
 6. Add episode list/detail/close/reopen endpoints before episode UX is enabled.
 7. Add protected source-entry access with `no-store` and audit before showing
@@ -438,7 +438,7 @@ the documented target differ in these exact places:
    contract instead of depending on the client label.
 9. Add settings update and session-management endpoints before exposing their
    controls.
-10. Decide whether MVP export stays immediate `GET /exports?format=...` or moves
+10. Decide whether MVP export stays immediate `GET /api/v1/exports?format=...` or moves
     to the documented asynchronous export lifecycle; the frontend supports one
     explicit contract, not both implicitly.
 

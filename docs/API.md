@@ -345,9 +345,9 @@ Requires re-authentication/code confirmation and returns a deletion job status. 
 
 Cross-user resource access returns `404`, not `403`.
 
-## 12. Compatibility
+## 12. Routing boundary
 
-`/api/v1` is the canonical public prefix. Existing root routes remain as
-temporary compatibility aliases for the initial web shell. New clients must
-use `/api/v1`; aliases may be removed only after the shell migration is
-complete.
+`/api/v1` is the only public application API prefix. Infrastructure endpoints
+(`/healthz`, `/readyz`, `/metrics`) and `POST /telegram/webhook` stay outside
+that prefix. Every other `GET` path is served as the Vue SPA (`index.html`
+fallback), including frontend routes such as `/calendar` and `/events/:id/edit`.

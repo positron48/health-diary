@@ -3,6 +3,7 @@ package app
 import (
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -43,13 +44,28 @@ func TestReadyzWithoutDatabaseIsUnavailable(t *testing.T) {
 }
 
 func TestSPARouteFallsBackToIndex(t *testing.T) {
-	request := httptest.NewRequest(http.MethodGet, "/calendar/2026-07", nil)
-	response := httptest.NewRecorder()
-	New(config.Config{}, nil).Handler().ServeHTTP(response, request)
-	if response.Code != http.StatusOK {
-		t.Fatalf("status=%d, want %d", response.Code, http.StatusOK)
+	handler := New(config.Config{}, nil).Handler()
+	for _, path := range []string{"/calendar", "/calendar?day=2026-07-19", "/calendar/2026-07", "/events/some-id/edit", "/analytics"} {
+		request := httptest.NewRequest(http.MethodGet, path, nil)
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, request)
+		if response.Code != http.StatusOK {
+			t.Fatalf("%s: status=%d, want %d", path, response.Code, http.StatusOK)
+		}
+		if contentType := response.Header().Get("Content-Type"); contentType != "text/html; charset=utf-8" {
+			t.Fatalf("%s: content type=%q", path, contentType)
+		}
 	}
-	if contentType := response.Header().Get("Content-Type"); contentType != "text/html; charset=utf-8" {
-		t.Fatalf("content type=%q", contentType)
+}
+
+func TestRootAPIAliasesAreRemoved(t *testing.T) {
+	handler := New(config.Config{}, nil).Handler()
+	for _, path := range []string{"/calendar", "/events", "/analytics/summary", "/exports", "/batches/pending"} {
+		request := httptest.NewRequest(http.MethodGet, path, nil)
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, request)
+		if contentType := response.Header().Get("Content-Type"); !strings.Contains(contentType, "text/html") {
+			t.Fatalf("%s should be SPA HTML, got content-type %q status=%d", path, contentType, response.Code)
+		}
 	}
 }

@@ -64,11 +64,11 @@ This is a lightweight ADR registry. Update status and rationale before changing 
 - Decision: extracted events are pending until user confirmation; only confirmed events affect analytics.
 - Reason: LLM extraction can be wrong and health statistics must be correctable.
 
-### ADR-011: Versioned API with compatibility aliases
+### ADR-011: Versioned API under `/api/v1` only
 
 - Status: accepted
-- Decision: `/api/v1` is canonical. Existing root handlers remain temporary aliases while the original web shell is migrated.
-- Reason: stable frontend contracts without breaking the already runnable vertical slice.
+- Decision: `/api/v1` is the only public application API prefix. Root compatibility aliases (`/calendar`, `/events`, …) are removed so SPA routes never collide with JSON handlers on refresh.
+- Reason: the Vue client already uses `/api/v1`; keeping root aliases made `GET /calendar` return JSON instead of `index.html`.
 
 ### ADR-012: Synchronous MVP export
 

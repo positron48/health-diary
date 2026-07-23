@@ -15,7 +15,6 @@ import (
 	"time"
 	_ "time/tzdata"
 
-	"health-diary/internal/analytics"
 	"health-diary/internal/auth"
 	"health-diary/internal/bot"
 	"health-diary/internal/config"
@@ -157,46 +156,34 @@ func (a *App) Handler() http.Handler {
 		w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
 		writeText(w, http.StatusOK, "health_diary_up 1\n")
 	})
-	mux.HandleFunc("POST /auth/challenges", a.createChallenge)
-	mux.HandleFunc("POST /api/v1/auth/challenges", a.createChallenge)
 	if a.telegramWebhook != nil {
 		mux.Handle("POST /telegram/webhook", a.telegramWebhook)
 	}
-	mux.HandleFunc("POST /auth/challenges/{id}/verify", a.verifyChallenge)
+
+	// Public API lives only under /api/v1 so SPA routes like /calendar never collide.
+	mux.HandleFunc("POST /api/v1/auth/challenges", a.createChallenge)
 	mux.HandleFunc("POST /api/v1/auth/challenges/{id}/verify", a.verifyChallenge)
-	mux.Handle("GET /auth/session", a.requireSession(http.HandlerFunc(a.me)))
-	mux.Handle("DELETE /auth/session", a.requireSession(http.HandlerFunc(a.logout)))
 	mux.Handle("GET /api/v1/auth/session", a.requireSession(http.HandlerFunc(a.me)))
 	mux.Handle("DELETE /api/v1/auth/session", a.requireSession(http.HandlerFunc(a.logout)))
 	mux.Handle("DELETE /api/v1/auth/sessions", a.requireSession(http.HandlerFunc(a.revokeSessions)))
-	mux.Handle("GET /api/me", a.requireSession(http.HandlerFunc(a.me)))
 	mux.Handle("GET /api/v1/me", a.requireSession(http.HandlerFunc(a.me)))
 	mux.Handle("PATCH /api/v1/me", a.requireSession(http.HandlerFunc(a.patchMe)))
-	mux.Handle("GET /calendar", a.requireSession(http.HandlerFunc(a.calendar)))
 	mux.Handle("GET /api/v1/calendar", a.requireSession(http.HandlerFunc(a.calendarV1)))
 	mux.Handle("GET /api/v1/days/{date}", a.requireSession(http.HandlerFunc(a.dayTimeline)))
 	mux.Handle("POST /api/v1/entries", a.requireSession(http.HandlerFunc(a.createEntry)))
-	mux.Handle("GET /analytics/summary", a.requireSession(http.HandlerFunc(a.analyticsSummary)))
 	mux.Handle("GET /api/v1/analytics/summary", a.requireSession(http.HandlerFunc(a.analyticsSummaryV1)))
 	mux.Handle("GET /api/v1/analytics/associations", a.requireSession(http.HandlerFunc(a.analyticsAssociations)))
 	mux.Handle("GET /api/v1/analytics/medications", a.requireSession(http.HandlerFunc(a.analyticsMedications)))
-	mux.Handle("GET /events", a.requireSession(http.HandlerFunc(a.events)))
 	mux.Handle("GET /api/v1/events", a.requireSession(http.HandlerFunc(a.eventsV1)))
 	mux.Handle("GET /api/v1/events/{id}", a.requireSession(http.HandlerFunc(a.eventDetail)))
 	mux.Handle("PATCH /api/v1/events/{id}", a.requireSession(http.HandlerFunc(a.patchEvent)))
-	mux.Handle("GET /batches/pending", a.requireSession(http.HandlerFunc(a.pendingBatches)))
 	mux.Handle("GET /api/v1/batches", a.requireSession(http.HandlerFunc(a.pendingBatchesV1)))
 	mux.Handle("GET /api/v1/inbox", a.requireSession(http.HandlerFunc(a.inboxV1)))
 	mux.Handle("GET /api/v1/entries/{id}", a.requireSession(http.HandlerFunc(a.sourceEntry)))
-	mux.Handle("GET /exports", a.requireSession(http.HandlerFunc(a.exportEvents)))
 	mux.Handle("GET /api/v1/exports", a.requireSession(http.HandlerFunc(a.exportEvents)))
-	mux.Handle("DELETE /events/{id}", a.requireSession(http.HandlerFunc(a.deleteEvent)))
 	mux.Handle("DELETE /api/v1/events/{id}", a.requireSession(http.HandlerFunc(a.deleteEvent)))
-	mux.Handle("POST /events/{id}/restore", a.requireSession(http.HandlerFunc(a.restoreEvent)))
 	mux.Handle("POST /api/v1/events/{id}/restore", a.requireSession(http.HandlerFunc(a.restoreEvent)))
-	mux.Handle("POST /batches/{id}/confirm", a.requireSession(http.HandlerFunc(a.confirmBatch)))
 	mux.Handle("POST /api/v1/batches/{id}/confirm", a.requireSession(http.HandlerFunc(a.confirmBatch)))
-	mux.Handle("POST /batches/{id}/reject", a.requireSession(http.HandlerFunc(a.rejectBatch)))
 	mux.Handle("POST /api/v1/batches/{id}/reject", a.requireSession(http.HandlerFunc(a.rejectBatch)))
 	mux.Handle("GET /api/v1/places/search", a.requireSession(http.HandlerFunc(a.searchPlaces)))
 	mux.Handle("POST /api/v1/places", a.requireSession(http.HandlerFunc(a.createPlace)))
@@ -207,13 +194,8 @@ func (a *App) Handler() http.Handler {
 	mux.Handle("GET /api/v1/episodes/{id}", a.requireSession(http.HandlerFunc(a.episodeDetail)))
 	mux.Handle("POST /api/v1/episodes/{id}/close", a.requireSession(http.HandlerFunc(a.closeEpisode)))
 	mux.Handle("POST /api/v1/episodes/{id}/reopen", a.requireSession(http.HandlerFunc(a.reopenEpisode)))
-	mux.Handle("POST /me/deletion-request", a.requireSession(http.HandlerFunc(a.deletionRequest)))
 	mux.Handle("POST /api/v1/me/deletion-request", a.requireSession(http.HandlerFunc(a.deletionRequest)))
-	mux.HandleFunc("GET /api/health-data", func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Cache-Control", "no-store")
-		w.Header().Set("Content-Type", "application/json; charset=utf-8")
-		_, _ = w.Write([]byte(`{"items":[]}`))
-	})
+
 	web, err := fs.Sub(webAssets, "web/dist")
 	if err != nil {
 		panic(err)
@@ -281,72 +263,6 @@ func (a *App) transitionBatch(w http.ResponseWriter, r *http.Request, confirmed 
 		_ = a.syncContextAndWeather(r.Context(), user)
 	}
 	w.WriteHeader(http.StatusNoContent)
-}
-
-func (a *App) events(w http.ResponseWriter, r *http.Request) {
-	user := r.Context().Value(sessionContextKey{}).(auth.SessionUser)
-	rows, err := a.db.Query(r.Context(), `SELECT id::text,kind,occurred_at,attributes,revision,status FROM health_events WHERE user_id=$1 AND status='confirmed' AND deleted_at IS NULL ORDER BY occurred_at DESC LIMIT 200`, user.ID)
-	if err != nil {
-		writeAPIError(w, r, http.StatusInternalServerError, "internal_error", "Не удалось загрузить события", nil)
-		return
-	}
-	defer rows.Close()
-	items := []map[string]any{}
-	for rows.Next() {
-		var id, kind, status string
-		var occurred time.Time
-		var attrs json.RawMessage
-		var revision int
-		if err := rows.Scan(&id, &kind, &occurred, &attrs, &revision, &status); err != nil {
-			writeAPIError(w, r, 500, "internal_error", "Не удалось загрузить события", nil)
-			return
-		}
-		items = append(items, map[string]any{"id": id, "kind": kind, "occurred_at": occurred, "attributes": attrs, "revision": revision, "status": status})
-	}
-	w.Header().Set("Cache-Control", "no-store")
-	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	_ = json.NewEncoder(w).Encode(map[string]any{"events": items})
-}
-
-func (a *App) pendingBatches(w http.ResponseWriter, r *http.Request) {
-	user := r.Context().Value(sessionContextKey{}).(auth.SessionUser)
-	rows, err := a.db.Query(r.Context(), `SELECT b.id::text,b.version,b.created_at,e.id::text,e.kind,e.occurred_at,e.attributes,e.revision
-        FROM event_batches b JOIN health_events e ON e.batch_id=b.id
-        WHERE b.user_id=$1 AND b.status='pending' AND e.deleted_at IS NULL
-        ORDER BY b.created_at DESC,e.occurred_at ASC`, user.ID)
-	if err != nil {
-		writeAPIError(w, r, 500, "internal_error", "Не удалось загрузить входящие", nil)
-		return
-	}
-	defer rows.Close()
-	type batch struct {
-		ID        string           `json:"id"`
-		Version   int              `json:"version"`
-		CreatedAt time.Time        `json:"created_at"`
-		Events    []map[string]any `json:"events"`
-	}
-	byID := map[string]*batch{}
-	ordered := []*batch{}
-	for rows.Next() {
-		var id, eventID, kind string
-		var version, revision int
-		var created, occurred time.Time
-		var attrs json.RawMessage
-		if err := rows.Scan(&id, &version, &created, &eventID, &kind, &occurred, &attrs, &revision); err != nil {
-			writeAPIError(w, r, 500, "internal_error", "Не удалось загрузить входящие", nil)
-			return
-		}
-		b := byID[id]
-		if b == nil {
-			b = &batch{ID: id, Version: version, CreatedAt: created}
-			byID[id] = b
-			ordered = append(ordered, b)
-		}
-		b.Events = append(b.Events, map[string]any{"id": eventID, "kind": kind, "occurred_at": occurred, "attributes": attrs, "revision": revision})
-	}
-	w.Header().Set("Cache-Control", "no-store")
-	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	_ = json.NewEncoder(w).Encode(map[string]any{"batches": ordered})
 }
 
 func (a *App) exportEvents(w http.ResponseWriter, r *http.Request) {
@@ -467,52 +383,6 @@ func (a *App) mutateDeletion(w http.ResponseWriter, r *http.Request, deleting bo
 	}
 	a.afterEventMutation(r)
 	w.WriteHeader(http.StatusNoContent)
-}
-
-func (a *App) calendar(w http.ResponseWriter, r *http.Request) {
-	month, err := time.Parse("2006-01", r.URL.Query().Get("month"))
-	if err != nil {
-		writeAPIError(w, r, 422, "validation_failed", "Проверьте месяц", map[string]string{"month": "must be YYYY-MM"})
-		return
-	}
-	user := r.Context().Value(sessionContextKey{}).(auth.SessionUser)
-	loc := userLocation(user.Timezone)
-	start := userday.Start(user.DayStart)
-	from, _, _ := userday.Bounds(month.Format("2006-01-02"), loc, start)
-	nextMonth := month.AddDate(0, 1, 0)
-	to, _, _ := userday.Bounds(nextMonth.Format("2006-01-02"), loc, start)
-	events, err := analytics.New(a.db).Events(r.Context(), user.ID, from, to)
-	if err != nil {
-		writeAPIError(w, r, 500, "internal_error", "Не удалось загрузить календарь", nil)
-		return
-	}
-	w.Header().Set("Cache-Control", "no-store")
-	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	_ = json.NewEncoder(w).Encode(map[string]any{"month": month.Format("2006-01"), "timezone": user.Timezone, "events": events})
-}
-
-func (a *App) analyticsSummary(w http.ResponseWriter, r *http.Request) {
-	user := r.Context().Value(sessionContextKey{}).(auth.SessionUser)
-	days, err := strconv.Atoi(r.URL.Query().Get("days"))
-	if err != nil || (days != 7 && days != 30 && days != 60 && days != 90) {
-		writeAPIError(w, r, 422, "validation_failed", "Проверьте период", map[string]string{"days": "must be 7, 30, 60 or 90"})
-		return
-	}
-	loc := userLocation(user.Timezone)
-	start := userday.Start(user.DayStart)
-	currentDate := userday.CurrentDate(time.Now(), loc, start)
-	_, to, _ := userday.Bounds(currentDate, loc, start)
-	fromDate, _ := time.ParseInLocation("2006-01-02", currentDate, loc)
-	fromDate = fromDate.AddDate(0, 0, -days+1)
-	from, _, _ := userday.Bounds(fromDate.Format("2006-01-02"), loc, start)
-	events, err := analytics.New(a.db).Events(r.Context(), user.ID, from, to)
-	if err != nil {
-		writeAPIError(w, r, 500, "internal_error", "Не удалось рассчитать аналитику", nil)
-		return
-	}
-	w.Header().Set("Cache-Control", "no-store")
-	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	_ = json.NewEncoder(w).Encode(analytics.BuildSummary(events, from.In(loc), to.In(loc), user.Timezone, start))
 }
 
 func userLocation(timezone string) *time.Location {
