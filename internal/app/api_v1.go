@@ -502,7 +502,8 @@ func (a *App) attachContextLayers(ctx context.Context, userID string, month, nex
 	rows, err := a.db.Query(ctx, `SELECT period_type,COALESCE(place_label,''),started_on,ended_on
 		FROM context_periods
 		WHERE user_id=$1 AND status IN ('open','closed')
-		AND started_on < $3::date AND (ended_on IS NULL OR ended_on >= $2::date)`,
+		AND started_on < $3::date AND (ended_on IS NULL OR ended_on >= $2::date)
+		ORDER BY started_on DESC,created_at DESC`,
 		userID, month.Format("2006-01-02"), nextMonth.Format("2006-01-02"))
 	if err != nil {
 		return
@@ -561,7 +562,15 @@ func (a *App) attachContextLayers(ctx context.Context, userID string, month, nex
 
 func (a *App) attachWeatherLayers(ctx context.Context, userID string, month, nextMonth time.Time, days map[string]*calendarDay) {
 	rows, err := a.db.Query(ctx, `SELECT local_date,temp_mean_c,weather_code,pressure_delta_24h_hpa,is_complete
-		FROM daily_weather WHERE user_id=$1 AND local_date >= $2::date AND local_date < $3::date`,
+		FROM daily_weather d WHERE d.user_id=$1 AND d.local_date >= $2::date AND d.local_date < $3::date
+		AND d.place_id=COALESCE(
+			(SELECT c.place_id FROM context_periods c
+			 WHERE c.user_id=$1 AND c.status IN ('open','closed') AND c.place_id IS NOT NULL
+			 AND c.started_on <= d.local_date AND (c.ended_on IS NULL OR c.ended_on >= d.local_date)
+			 ORDER BY c.started_on DESC,c.created_at DESC LIMIT 1),
+			NULLIF((SELECT settings->>'home_place_id' FROM users WHERE id=$1),'')::uuid,
+			'00000000-0000-4000-8000-000000000001'::uuid
+		)`,
 		userID, month.Format("2006-01-02"), nextMonth.Format("2006-01-02"))
 	if err != nil {
 		return
@@ -1043,7 +1052,15 @@ func (a *App) analyticsAssociations(w http.ResponseWriter, r *http.Request) {
 	}
 	if a.config.WeatherAssociations {
 		weatherRows, _ := a.db.Query(r.Context(), `SELECT local_date,pressure_delta_24h_hpa FROM daily_weather
-			WHERE user_id=$1 AND is_complete AND local_date >= $2::date AND local_date < $3::date`,
+			WHERE user_id=$1 AND is_complete AND local_date >= $2::date AND local_date < $3::date
+			AND place_id=COALESCE(
+				(SELECT c.place_id FROM context_periods c
+				 WHERE c.user_id=$1 AND c.status IN ('open','closed') AND c.place_id IS NOT NULL
+				 AND c.started_on <= daily_weather.local_date AND (c.ended_on IS NULL OR c.ended_on >= daily_weather.local_date)
+				 ORDER BY c.started_on DESC,c.created_at DESC LIMIT 1),
+				NULLIF((SELECT settings->>'home_place_id' FROM users WHERE id=$1),'')::uuid,
+				'00000000-0000-4000-8000-000000000001'::uuid
+			)`,
 			user.ID, from.Format("2006-01-02"), to.Format("2006-01-02"))
 		if weatherRows != nil {
 			defer weatherRows.Close()

@@ -223,6 +223,9 @@ Each day cell stays compact:
 - weather: icon + one temperature;
 - context: thin continuous ribbon with MapPin; city or period type label on every day of the period (not only the start segment).
 
+The user's current local date has an inner accent outline. The selected date
+keeps its stronger outer outline, so both states remain visible together.
+
 Present layers share a segmented color stripe (not a blended gradient). Empty cell means `Нет записей`. Switching layers must preserve month and selected day and must not refetch. Selecting a day loads a no-store preview of its ten latest confirmed events.
 
 ### 6.5 Day timeline
@@ -303,7 +306,10 @@ No pie charts for time series and no red/green good/bad scoring of health data.
 
 Separate sections:
 
-- profile: timezone and locale;
+- profile: timezone, locale and home city;
+- location: effective city, manual `Сменить город` / `Вернулся домой` actions
+  with an inclusive local `С какого дня`, optional `По какой день` and period
+  history;
 - privacy: Telegram cloud-chat, LLM provider and retention explanation;
 - data: CSV/JSON export;
 - sessions: log out current/all devices when supported;
@@ -312,6 +318,13 @@ Separate sections:
 
 Never place account deletion in the everyday timeline. The deletion copy must
 distinguish service data, Telegram chat history and encrypted backup expiry.
+
+The location form searches city-level Open-Meteo candidates and keeps the
+selected city/date in memory through recoverable errors. Empty end date means
+“until the next change”. Starting a new open period closes the previous active
+override on the preceding day. `Вернулся домой` uses the configured home city;
+it never silently changes that setting. Show a conflict inline and reload the
+history without discarding the draft. No GPS or street-address controls exist.
 
 ## 7. Shared UI states
 

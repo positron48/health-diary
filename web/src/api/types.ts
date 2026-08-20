@@ -38,6 +38,34 @@ export interface InboxResponse {
   count: number
 }
 export interface UserSettings { day_start_time?: string; home_place_id?: string }
+export type ContextPeriodType = 'vacation' | 'trip' | 'temporary_stay' | 'relocation' | 'other'
+export interface PlaceCandidate {
+  provider_place_id: string
+  label: string
+  region?: string
+  country_code: string
+  timezone: string
+  latitude: number
+  longitude: number
+}
+export interface ActiveLocation {
+  place_id: string
+  place_label: string
+  source: 'home' | 'period'
+  period_type?: ContextPeriodType
+  local_date: string
+}
+export interface ContextPeriod {
+  id: string
+  period_type: ContextPeriodType
+  place_id?: string
+  place_label: string
+  started_on: string
+  ended_on?: string
+  status: 'open' | 'closed'
+  revision: number
+}
+export interface ContextPeriodsResponse { active: ActiveLocation; periods: ContextPeriod[] }
 export interface Session {
   id: string
   timezone: string

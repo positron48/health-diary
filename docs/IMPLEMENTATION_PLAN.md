@@ -325,6 +325,9 @@ Tasks:
 - Day timeline and episode detail.
 - Pending batch confirm/reject/correct.
 - Manual edit/delete/restore with revision conflicts.
+- Manual city-level location periods in settings: effective city, city search,
+  inclusive start/optional end, atomic replacement of the active override and
+  explicit return to the configured home city.
 - Responsive layout and application shell PWA.
 - `no-store` health fetches; service worker caches static shell only.
 

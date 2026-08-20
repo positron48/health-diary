@@ -3,13 +3,17 @@ package app
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strings"
 	"time"
 
 	"health-diary/internal/auth"
 	"health-diary/internal/contextperiod"
+	"health-diary/internal/userday"
 	"health-diary/internal/weather"
+
+	"github.com/jackc/pgx/v5"
 )
 
 func (a *App) syncContextAndWeather(ctx context.Context, user auth.SessionUser) error {
@@ -54,7 +58,7 @@ func (a *App) enqueueWeatherForUser(ctx context.Context, userID string) error {
 }
 
 func (a *App) searchPlaces(w http.ResponseWriter, r *http.Request) {
-	if a.weather == nil || !a.config.WeatherEnabled {
+	if a.weather == nil {
 		writeAPIError(w, r, http.StatusServiceUnavailable, "weather_disabled", "Поиск городов временно недоступен", nil)
 		return
 	}
@@ -109,9 +113,14 @@ func (a *App) createPlace(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *App) listContextPeriods(w http.ResponseWriter, r *http.Request) {
+	if !a.config.ContextEnabled {
+		writeAPIError(w, r, http.StatusServiceUnavailable, "context_disabled", "Местоположение временно недоступно", nil)
+		return
+	}
 	user := sessionUser(r)
-	rows, err := a.db.Query(r.Context(), `SELECT id::text,period_type,COALESCE(place_id::text,''),COALESCE(place_label,''),started_on,ended_on,status,revision
-		FROM context_periods WHERE user_id=$1 AND status <> 'cancelled' ORDER BY started_on DESC LIMIT 100`, user.ID)
+	rows, err := a.db.Query(r.Context(), `SELECT c.id::text,c.period_type,COALESCE(c.place_id::text,''),COALESCE(NULLIF(c.place_label,''),p.label,''),c.started_on,c.ended_on,c.status,c.revision
+		FROM context_periods c LEFT JOIN places p ON p.id=c.place_id
+		WHERE c.user_id=$1 AND c.status <> 'cancelled' ORDER BY c.started_on DESC,c.created_at DESC LIMIT 100`, user.ID)
 	if err != nil {
 		writeAPIError(w, r, 500, "internal_error", "Не удалось загрузить периоды", nil)
 		return
@@ -138,10 +147,20 @@ func (a *App) listContextPeriods(w http.ResponseWriter, r *http.Request) {
 		}
 		items = append(items, item)
 	}
-	writeJSON(w, 200, map[string]any{"periods": items})
+	localDate := userday.CurrentDate(time.Now(), userLocation(user.Timezone), userday.Start(user.DayStart))
+	active, err := a.activeLocation(r.Context(), user, localDate)
+	if err != nil {
+		writeAPIError(w, r, 500, "internal_error", "Не удалось определить текущий город", nil)
+		return
+	}
+	writeJSON(w, 200, map[string]any{"active": active, "periods": items})
 }
 
 func (a *App) createContextPeriod(w http.ResponseWriter, r *http.Request) {
+	if !a.config.ContextEnabled {
+		writeAPIError(w, r, http.StatusServiceUnavailable, "context_disabled", "Местоположение временно недоступно", nil)
+		return
+	}
 	user := sessionUser(r)
 	var input struct {
 		PeriodType  string   `json:"period_type"`
@@ -162,26 +181,19 @@ func (a *App) createContextPeriod(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, r, 400, "malformed_request", "Некорректный JSON", nil)
 		return
 	}
-	fields := map[string]string{}
-	allowed := map[string]bool{"vacation": true, "trip": true, "temporary_stay": true, "relocation": true, "other": true}
-	if !allowed[input.PeriodType] {
-		fields["period_type"] = "unsupported"
+	preflight := contextperiod.ManualInput{
+		PeriodType: input.PeriodType,
+		PlaceID:    "selected-place",
+		StartedOn:  input.StartedOn,
+		EndedOn:    input.EndedOn,
 	}
-	if _, err := time.Parse("2006-01-02", input.StartedOn); err != nil {
-		fields["started_on"] = "must be YYYY-MM-DD"
-	}
-	if input.EndedOn != nil {
-		if _, err := time.Parse("2006-01-02", *input.EndedOn); err != nil {
-			fields["ended_on"] = "must be YYYY-MM-DD"
-		}
-	}
-	if len(fields) > 0 {
+	if fields := contextperiod.ValidateManualInput(preflight); len(fields) > 0 {
 		writeAPIError(w, r, 422, "validation_failed", "Проверьте период", fields)
 		return
 	}
 	placeID := ""
 	if input.PlaceID != nil {
-		placeID = *input.PlaceID
+		placeID = strings.TrimSpace(*input.PlaceID)
 	}
 	if placeID == "" && input.ProviderID != nil && input.Latitude != nil && input.Longitude != nil {
 		label := ""
@@ -198,38 +210,139 @@ func (a *App) createContextPeriod(w http.ResponseWriter, r *http.Request) {
 		if input.Timezone != nil {
 			tz = *input.Timezone
 		}
-		_ = a.db.QueryRow(r.Context(), `INSERT INTO places(user_id,label,region,country_code,timezone,provider,provider_place_id,latitude,longitude)
+		if label == "" || strings.TrimSpace(*input.ProviderID) == "" {
+			writeAPIError(w, r, 422, "validation_failed", "Проверьте город", map[string]string{"place_id": "select a city"})
+			return
+		}
+		if _, err := time.LoadLocation(tz); err != nil {
+			writeAPIError(w, r, 422, "validation_failed", "Проверьте город", map[string]string{"timezone": "must be an IANA timezone"})
+			return
+		}
+		if err := a.db.QueryRow(r.Context(), `INSERT INTO places(user_id,label,region,country_code,timezone,provider,provider_place_id,latitude,longitude)
 			VALUES($1,$2,$3,$4,$5,'open-meteo',$6,$7,$8)
 			ON CONFLICT (provider,provider_place_id) DO UPDATE SET label=EXCLUDED.label
-			RETURNING id::text`, user.ID, label, nullIfEmptyPtr(region), country, tz, *input.ProviderID, *input.Latitude, *input.Longitude).Scan(&placeID)
+			RETURNING id::text`, user.ID, label, nullIfEmptyPtr(region), country, tz, *input.ProviderID, *input.Latitude, *input.Longitude).Scan(&placeID); err != nil {
+			writeAPIError(w, r, 500, "internal_error", "Не удалось сохранить город", nil)
+			return
+		}
 	}
-	status := "open"
-	var ended any
-	if input.EndedOn != nil {
-		ended = *input.EndedOn
-		status = "closed"
+	manual := contextperiod.ManualInput{
+		PeriodType: input.PeriodType,
+		PlaceID:    placeID,
+		StartedOn:  input.StartedOn,
+		EndedOn:    input.EndedOn,
 	}
-	var id string
-	err := a.db.QueryRow(r.Context(), `INSERT INTO context_periods(user_id,period_type,place_id,place_label,started_on,ended_on,status)
-		VALUES($1,$2,NULLIF($3,''),$4,$5::date,$6,$7) RETURNING id::text`,
-		user.ID, input.PeriodType, placeID, input.PlaceLabel, input.StartedOn, ended, status).Scan(&id)
+	if fields := contextperiod.ValidateManualInput(manual); len(fields) > 0 {
+		writeAPIError(w, r, 422, "validation_failed", "Проверьте период", fields)
+		return
+	}
+	period, err := contextperiod.CreateManual(r.Context(), a.db, user.ID, manual)
 	if err != nil {
+		if errors.Is(err, contextperiod.ErrConflict) {
+			writeAPIError(w, r, http.StatusConflict, "context_period_conflict", "На эти даты уже задан другой город", nil)
+			return
+		}
+		if errors.Is(err, contextperiod.ErrPlaceNotFound) {
+			writeAPIError(w, r, 422, "validation_failed", "Проверьте город", map[string]string{"place_id": "unknown place"})
+			return
+		}
 		writeAPIError(w, r, 500, "internal_error", "Не удалось сохранить период", nil)
 		return
 	}
 	if placeID != "" && a.config.WeatherEnabled {
-		to := input.StartedOn
+		to := time.Now().In(userLocation(user.Timezone)).Format("2006-01-02")
 		if input.EndedOn != nil {
-			to = *input.EndedOn
-		} else {
-			to = time.Now().Format("2006-01-02")
+			if *input.EndedOn < to {
+				to = *input.EndedOn
+			}
 		}
-		_ = weather.EnqueueRange(r.Context(), a.db, user.ID, placeID, input.StartedOn, to, a.config.JobMaxAttempts)
+		if input.StartedOn <= to {
+			_ = weather.EnqueueRange(r.Context(), a.db, user.ID, placeID, input.StartedOn, to, a.config.JobMaxAttempts)
+		}
 	}
-	writeJSON(w, 201, map[string]any{"id": id, "status": status})
+	writeJSON(w, 201, period)
+}
+
+func (a *App) returnHome(w http.ResponseWriter, r *http.Request) {
+	if !a.config.ContextEnabled {
+		writeAPIError(w, r, http.StatusServiceUnavailable, "context_disabled", "Местоположение временно недоступно", nil)
+		return
+	}
+	var input struct {
+		StartedOn string `json:"started_on"`
+	}
+	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4<<10))
+	decoder.DisallowUnknownFields()
+	if decoder.Decode(&input) != nil {
+		writeAPIError(w, r, 400, "malformed_request", "Некорректный JSON", nil)
+		return
+	}
+	if _, err := time.Parse("2006-01-02", input.StartedOn); err != nil {
+		writeAPIError(w, r, 422, "validation_failed", "Проверьте дату", map[string]string{"started_on": "must be YYYY-MM-DD"})
+		return
+	}
+	user := sessionUser(r)
+	homeID, homeLabel, err := a.homePlace(r.Context(), user.ID)
+	if err != nil {
+		writeAPIError(w, r, 500, "internal_error", "Не удалось определить домашний город", nil)
+		return
+	}
+	if err := contextperiod.ReturnHome(r.Context(), a.db, user.ID, input.StartedOn); err != nil {
+		writeAPIError(w, r, 500, "internal_error", "Не удалось вернуть домашний город", nil)
+		return
+	}
+	if homeID != "" && a.config.WeatherEnabled {
+		today := time.Now().In(userLocation(user.Timezone)).Format("2006-01-02")
+		if input.StartedOn <= today {
+			_ = weather.EnqueueRange(r.Context(), a.db, user.ID, homeID, input.StartedOn, today, a.config.JobMaxAttempts)
+		}
+	}
+	writeJSON(w, 200, map[string]any{"active": map[string]any{
+		"place_id": homeID, "place_label": homeLabel, "source": "home", "local_date": input.StartedOn,
+	}})
+}
+
+func (a *App) activeLocation(ctx context.Context, user auth.SessionUser, localDate string) (map[string]any, error) {
+	placeID, placeLabel, periodType, _, err := contextperiod.ActivePlaceForDate(ctx, a.db, user.ID, localDate)
+	if err == nil {
+		return map[string]any{
+			"place_id": placeID, "place_label": placeLabel, "period_type": periodType,
+			"source": "period", "local_date": localDate,
+		}, nil
+	}
+	if !errors.Is(err, pgx.ErrNoRows) {
+		return nil, err
+	}
+	homeID, homeLabel, err := a.homePlace(ctx, user.ID)
+	if err != nil {
+		return nil, err
+	}
+	return map[string]any{
+		"place_id": homeID, "place_label": homeLabel, "source": "home", "local_date": localDate,
+	}, nil
+}
+
+func (a *App) homePlace(ctx context.Context, userID string) (string, string, error) {
+	const defaultHomeID = "00000000-0000-4000-8000-000000000001"
+	placeID := ""
+	if err := a.db.QueryRow(ctx, `SELECT COALESCE(settings->>'home_place_id','') FROM users WHERE id=$1`, userID).Scan(&placeID); err != nil {
+		return "", "", err
+	}
+	if placeID == "" {
+		placeID = defaultHomeID
+	}
+	var label string
+	if err := a.db.QueryRow(ctx, `SELECT label FROM places WHERE id::text=$1 AND (user_id IS NULL OR user_id=$2)`, placeID, userID).Scan(&label); err != nil {
+		return "", "", err
+	}
+	return placeID, label, nil
 }
 
 func (a *App) patchContextPeriod(w http.ResponseWriter, r *http.Request) {
+	if !a.config.ContextEnabled {
+		writeAPIError(w, r, http.StatusServiceUnavailable, "context_disabled", "Местоположение временно недоступно", nil)
+		return
+	}
 	user := sessionUser(r)
 	var input struct {
 		Revision   int     `json:"revision"`
@@ -240,6 +353,19 @@ func (a *App) patchContextPeriod(w http.ResponseWriter, r *http.Request) {
 	if json.NewDecoder(http.MaxBytesReader(w, r.Body, 8<<10)).Decode(&input) != nil || input.Revision < 1 {
 		writeAPIError(w, r, 422, "validation_failed", "Требуется revision", map[string]string{"revision": "must be positive"})
 		return
+	}
+	if input.Status != nil {
+		allowed := map[string]bool{"open": true, "closed": true, "cancelled": true}
+		if !allowed[*input.Status] {
+			writeAPIError(w, r, 422, "validation_failed", "Проверьте статус", map[string]string{"status": "unsupported"})
+			return
+		}
+	}
+	if input.EndedOn != nil {
+		if _, err := time.Parse("2006-01-02", *input.EndedOn); err != nil {
+			writeAPIError(w, r, 422, "validation_failed", "Проверьте дату", map[string]string{"ended_on": "must be YYYY-MM-DD"})
+			return
+		}
 	}
 	tag, err := a.db.Exec(r.Context(), `UPDATE context_periods SET
 		ended_on=COALESCE($3::date,ended_on),

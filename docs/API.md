@@ -132,7 +132,22 @@ Editable settings also include `home_place_id`. Selecting a home place may queue
 
 ### `GET /context-periods` / `POST /context-periods` / `PATCH /context-periods/{id}`
 
-CRUD for confirmed context periods with revision concurrency. Creating/updating a period may enqueue weather enrichment for the covered dates.
+CRUD for confirmed context periods with revision concurrency. `GET` returns the
+effective location for the current local date (`active`) and the period history.
+
+Manual creation accepts a canonical place selected through `/places/search`, a
+required inclusive `started_on`, an optional inclusive `ended_on` and one of
+`vacation|trip|temporary_stay|relocation|other`. A new period closes the
+preceding open override on `started_on - 1 day`. Other overlaps return
+`409 context_period_conflict`; an end before the start returns field-level
+`422 validation_failed`.
+
+### `POST /context-periods/return-home`
+
+Body: `{"started_on":"2026-08-20"}`. Closes the override active on that local
+date and returns the effective configured home city. This is a deterministic,
+confirmed user action and does not create an LLM event. Creating/updating a
+period or returning home may enqueue weather enrichment for the affected dates.
 
 ### `GET /days/{date}`
 

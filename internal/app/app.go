@@ -79,7 +79,7 @@ func (a *App) Run(ctx context.Context, shutdownTimeout time.Duration) error {
 			provider, model = "polza", a.config.LLMModel
 		}
 		var enricher *weather.Enricher
-		if a.config.WeatherEnabled {
+		if a.config.ContextEnabled || a.config.WeatherEnabled {
 			a.weather = weather.NewClient(
 				a.config.Weather.BaseURL,
 				a.config.Weather.ForecastURL,
@@ -88,7 +88,9 @@ func (a *App) Run(ctx context.Context, shutdownTimeout time.Duration) error {
 				a.config.Weather.Timeout,
 				&http.Client{Timeout: a.config.Weather.Timeout},
 			)
-			enricher = weather.NewEnricher(a.db, a.weather)
+			if a.config.WeatherEnabled {
+				enricher = weather.NewEnricher(a.db, a.weather)
+			}
 		}
 		worker := jobs.NewWorker(a.db, a.cipher, extractor, "app-1", provider, model, enricher)
 		go func() {
@@ -190,6 +192,7 @@ func (a *App) Handler() http.Handler {
 	mux.Handle("POST /api/v1/places", a.requireSession(http.HandlerFunc(a.createPlace)))
 	mux.Handle("GET /api/v1/context-periods", a.requireSession(http.HandlerFunc(a.listContextPeriods)))
 	mux.Handle("POST /api/v1/context-periods", a.requireSession(http.HandlerFunc(a.createContextPeriod)))
+	mux.Handle("POST /api/v1/context-periods/return-home", a.requireSession(http.HandlerFunc(a.returnHome)))
 	mux.Handle("PATCH /api/v1/context-periods/{id}", a.requireSession(http.HandlerFunc(a.patchContextPeriod)))
 	mux.Handle("GET /api/v1/episodes", a.requireSession(http.HandlerFunc(a.episodes)))
 	mux.Handle("GET /api/v1/episodes/{id}", a.requireSession(http.HandlerFunc(a.episodeDetail)))

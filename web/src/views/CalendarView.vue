@@ -183,8 +183,16 @@ onMounted(() => { if (selected.value) preview.load() })
         <span v-if="!day" />
         <button
           v-else
-          :class="['day-cell', { selected: selected === day.date, empty: !day.has_data }]"
-          :aria-label="`${day.date}: ${metric(day)}`"
+          :class="[
+            'day-cell',
+            {
+              selected: selected === day.date,
+              today: currentDate === day.date,
+              empty: !day.has_data,
+            },
+          ]"
+          :aria-current="currentDate === day.date ? 'date' : undefined"
+          :aria-label="`${day.date}${currentDate === day.date ? ', сегодня' : ''}: ${metric(day)}`"
           @click="$router.replace({ query: { ...$route.query, day: day.date } })"
         >
           <span v-if="stripeLayers(day).length" class="stripes" aria-hidden="true">
@@ -260,7 +268,12 @@ onMounted(() => { if (selected.value) preview.load() })
   border-radius: 8px; background: var(--surface); padding: var(--s2); text-align: left;
   display: grid; align-content: start; gap: 4px;
 }
-.day-cell.selected { outline: 3px solid var(--primary); }
+.day-cell.today {
+  border-color: var(--primary);
+  box-shadow: inset 0 0 0 1px var(--primary);
+}
+.day-cell.selected { outline: 3px solid var(--primary); outline-offset: 1px; }
+.day-cell.today.selected { box-shadow: inset 0 0 0 2px var(--primary); }
 .stripes { position: absolute; left: 0; top: 0; bottom: 0; display: grid; width: 4px; }
 .stripe { display: block; }
 .stripe.tone-pain { background: var(--pain); }

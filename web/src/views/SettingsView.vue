@@ -8,6 +8,7 @@ import { useSession } from '../composables/useSession'
 import { useToast } from '../composables/useToast'
 import UiButton from '../components/ui/UiButton.vue'
 import UiDialog from '../components/ui/UiDialog.vue'
+import LocationSettings from '../features/settings/LocationSettings.vue'
 
 type PlaceHit = {
   provider_place_id: string
@@ -20,11 +21,12 @@ type PlaceHit = {
 }
 
 const session = useSession()
+const defaultLipetskId = '00000000-0000-4000-8000-000000000001'
 const timezone = ref(session.user.value?.timezone || 'Europe/Moscow')
 const dayStart = ref(session.user.value?.settings?.day_start_time || '00:00')
 const homeQuery = ref('')
-const homeLabel = ref('')
 const homePlaceId = ref(session.user.value?.settings?.home_place_id || '')
+const homeLabel = ref(homePlaceId.value === defaultLipetskId ? 'Липецк' : '')
 const placeHits = ref<PlaceHit[]>([])
 const danger = ref(false)
 const busy = ref(false)
@@ -111,14 +113,14 @@ async function remove() {
         <input v-model="homeQuery" placeholder="Липецк" autocomplete="off" @keyup.enter="searchHome">
         <small class="muted">
           Только город, без GPS. Погода подтягивается для дома и подтверждённых поездок.
-          {{ homeLabel || homePlaceId ? `Сейчас: ${homeLabel || homePlaceId}` : 'Можно выбрать Липецк по умолчанию.' }}
+          {{ homeLabel ? `Сейчас: ${homeLabel}` : homePlaceId ? 'Домашний город выбран.' : 'Можно выбрать Липецк по умолчанию.' }}
         </small>
       </label>
       <div class="cluster">
         <UiButton variant="secondary" :busy="busy" @click="searchHome">Найти город</UiButton>
         <UiButton
           variant="ghost"
-          @click="homePlaceId = '00000000-0000-4000-8000-000000000001'; homeLabel = 'Липецк'"
+          @click="homePlaceId = defaultLipetskId; homeLabel = 'Липецк'"
         >
           Липецк
         </UiButton>
@@ -132,6 +134,7 @@ async function remove() {
       </ul>
       <UiButton :busy="busy" @click="save">Сохранить</UiButton>
     </section>
+    <LocationSettings />
     <section class="card">
       <h2>Приватность</h2>
       <p>Исходные сообщения отделены от извлечённых фактов. Погода — Open-Meteo (CC BY 4.0), только центр выбранного города.</p>

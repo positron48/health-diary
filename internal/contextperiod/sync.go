@@ -112,12 +112,13 @@ func SyncConfirmed(ctx context.Context, db *pgxpool.Pool, userID, timezone, dayS
 
 // ActivePlaceForDate returns the context place for a local date, if any.
 func ActivePlaceForDate(ctx context.Context, db *pgxpool.Pool, userID, localDate string) (placeID, placeLabel, periodType, segment string, err error) {
-	err = db.QueryRow(ctx, `SELECT COALESCE(place_id::text,''), COALESCE(place_label,''), period_type,
+	err = db.QueryRow(ctx, `SELECT COALESCE(c.place_id::text,''), COALESCE(NULLIF(c.place_label,''),p.label,''), c.period_type,
 		CASE WHEN started_on=$2::date THEN 'start' WHEN ended_on=$2::date THEN 'end' ELSE 'middle' END
-		FROM context_periods
-		WHERE user_id=$1 AND status IN ('open','closed')
+		FROM context_periods c
+		LEFT JOIN places p ON p.id=c.place_id
+		WHERE c.user_id=$1 AND c.status IN ('open','closed')
 		AND started_on <= $2::date AND (ended_on IS NULL OR ended_on >= $2::date)
-		ORDER BY started_on DESC LIMIT 1`, userID, localDate).Scan(&placeID, &placeLabel, &periodType, &segment)
+		ORDER BY started_on DESC,c.created_at DESC LIMIT 1`, userID, localDate).Scan(&placeID, &placeLabel, &periodType, &segment)
 	return
 }
 

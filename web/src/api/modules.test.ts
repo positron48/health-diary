@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { authApi } from './auth'
 import { journalApi } from './journal'
 import { settingsApi } from './settings'
+import { contextApi } from './context'
 
 describe('canonical API modules', () => {
   const fetcher = vi.fn()
@@ -36,5 +37,13 @@ describe('canonical API modules', () => {
   it('удаляет подвисшую запись входящих через DELETE /entries/{id}', async () => {
     await journalApi.deleteEntry('entry-stuck')
     expect(fetcher).toHaveBeenCalledWith('/api/v1/entries/entry-stuck', expect.objectContaining({ method: 'DELETE' }))
+  })
+
+  it('сохраняет ручное возвращение домой с локальной даты', async () => {
+    fetcher.mockResolvedValue(new Response(JSON.stringify({ active: { place_id: 'home', place_label: 'Липецк', source: 'home', local_date: '2026-08-20' } }), { status: 200, headers: { 'Content-Type': 'application/json' } }))
+    await contextApi.returnHome('2026-08-20')
+    expect(fetcher).toHaveBeenCalledWith('/api/v1/context-periods/return-home', expect.objectContaining({
+      method: 'POST', body: JSON.stringify({ started_on: '2026-08-20' }),
+    }))
   })
 })
