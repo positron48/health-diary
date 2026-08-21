@@ -8,6 +8,7 @@ import type { CalendarDay } from '../api/types'
 import { useAsyncState } from '../composables/useAsyncState'
 import { useSession } from '../composables/useSession'
 import { userDate } from '../utils/userDay'
+import { isSignificantPressureChange, pressureChangeArrow, signedPressureChange } from '../utils/weather'
 import StatePanel from '../components/ui/StatePanel.vue'
 import EventCard from '../features/events/EventCard.vue'
 
@@ -81,8 +82,7 @@ function signals(day: CalendarDay): Signal[] {
     if (weatherFactor.value === 'pressure' && day.weather?.pressure_mean_hpa != null) {
       items.push({ key: 'weather', icon: Gauge, label: `${Math.round(Number(day.weather.pressure_mean_hpa))}`, tone: 'weather' })
     } else if (weatherFactor.value === 'change' && day.weather?.pressure_delta_24h_hpa != null) {
-      const delta = Math.round(Number(day.weather.pressure_delta_24h_hpa))
-      items.push({ key: 'weather', icon: ArrowDownUp, label: `${delta < 0 ? '↓' : '↑'}${Math.abs(delta)}`, tone: 'weather' })
+      items.push({ key: 'weather', icon: ArrowDownUp, label: pressureChangeArrow(day.weather.pressure_delta_24h_hpa), tone: 'weather' })
     } else if (day.weather?.temp_mean_c != null) {
       items.push({ key: 'weather', icon: CloudSun, label: `${Math.round(Number(day.weather.temp_mean_c))}°`, tone: 'weather' })
     }
@@ -105,7 +105,7 @@ function stripeLayers(day: CalendarDay) {
 function weatherVisible(day: CalendarDay) {
   if (!day.weather) return false
   if (weatherFactor.value === 'pressure') return day.weather.pressure_mean_hpa != null
-  if (weatherFactor.value === 'change') return day.weather.pressure_delta_24h_hpa != null && Math.abs(Number(day.weather.pressure_delta_24h_hpa)) >= 5
+  if (weatherFactor.value === 'change') return isSignificantPressureChange(day.weather.pressure_delta_24h_hpa)
   return day.weather.temp_mean_c != null
 }
 
@@ -118,9 +118,7 @@ function painWeatherPreset() {
 }
 
 function signedPressure(value?: number | null) {
-  if (value == null) return 'нет данных'
-  const rounded = Math.round(Number(value))
-  return `${rounded > 0 ? '+' : ''}${rounded} гПа за 24 ч`
+  return signedPressureChange(value)
 }
 
 function metric(day: CalendarDay) {
@@ -222,6 +220,7 @@ onMounted(() => { if (selected.value) preview.load() })
       >
         {{ label }}
       </button>
+      <span v-if="weatherFactor === 'change'" class="muted">от 5,0 гПа за сутки</span>
     </div>
     <p class="legend muted">Иконка + короткое число; цветные полоски = типы записей. Погода: Open-Meteo.</p>
     <StatePanel v-if="loading" kind="loading" />

@@ -214,8 +214,9 @@ control (plus, top-right) and multi-select layer chips:
 `Боль`, `Лекарства`, `Активность`, `Сон`, `Самочувствие`, `Контекст`, `Погода`.
 
 When `Погода` is active, secondary filters select `Температура`, `Давление` or
-`Перепады`. `Перепады` shows a signed arrow/value and may hide ordinary weather
-days locally without refetching the month. A `Боль + перепады` preset selects
+`Перепады`. `Перепады` shows the unrounded daily change to one decimal with a
+signed arrow and includes both rises and falls whose absolute value is at least
+`5.0 hPa`; smaller changes stay hidden locally without refetching the month. A `Боль + перепады` preset selects
 the two relevant layers. The selected-day pane shows temperature, mean pressure,
 24-hour pressure delta, humidity, precipitation and completeness.
 
