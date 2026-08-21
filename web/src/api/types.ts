@@ -78,6 +78,7 @@ export interface Session {
 export interface CalendarDay {
   date: string
   has_data: boolean
+  has_health_data?: boolean
   has_pending?: boolean
   pending_count?: number
   pain?: { max_intensity?: number | null; open?: boolean; episodes?: number }
@@ -86,7 +87,11 @@ export interface CalendarDay {
   sleep?: { minutes: number | null; quality: number | null }
   wellbeing?: { score?: number | null; motivation?: number | null; energy?: number | null }
   context?: { period_type: string; place_label?: string; segment?: 'start' | 'middle' | 'end' }
-  weather?: { temp_mean_c?: number | null; weather_code?: number | null; pressure_delta_24h_hpa?: number | null; is_complete?: boolean }
+  weather?: {
+    temp_min_c?: number | null; temp_max_c?: number | null; temp_mean_c?: number | null; weather_code?: number | null
+    pressure_mean_hpa?: number | null; pressure_delta_24h_hpa?: number | null; humidity_mean_pct?: number | null
+    precipitation_mm?: number | null; is_complete?: boolean
+  }
 }
 export interface CalendarResponse {
   month: string
@@ -103,6 +108,24 @@ export interface AnalyticsSummary {
   pain?: Record<string, number | null>; medication?: Record<string, number | null>; sleep?: Record<string, number | null>
   activity?: Record<string, number | null>; wellbeing?: Record<string, number | null>
   associations?: Array<{ label: string; sample_size: number; description: string }>; formula_version?: string; limitations?: string[]
+  weather?: WeatherAnalytics
+}
+export interface WeatherDayPoint {
+  date: string; temp_mean_c?: number | null; pressure_mean_hpa?: number | null; pressure_delta_24h_hpa?: number | null
+  humidity_mean_pct?: number | null; precipitation_mm?: number | null; is_complete: boolean; pain_starts: number
+}
+export interface PainWeatherWindow {
+  occurred_at: string; pressure_hpa?: number | null; pressure_delta_6h_hpa?: number | null; pressure_delta_24h_hpa?: number | null; intensity?: number | null
+}
+export interface WeatherFactor {
+  key: string; label: string; status: 'insufficient_data' | 'possible_association' | 'no_increased_rate' | string
+  exposed_days: number; unexposed_days: number; exposed_start_days: number; unexposed_start_days: number
+  exposed_rate?: number | null; unexposed_rate?: number | null; risk_ratio?: number | null; description: string
+  requirements: Record<string, { actual: number; required: number }>
+}
+export interface WeatherAnalytics {
+  status: string; coverage: { weather_days: number; pressure_days: number; headache_start_days: number; headache_starts: number }
+  series: WeatherDayPoint[]; pain_windows: PainWeatherWindow[]; factors: WeatherFactor[]; formula_version: string; limitation: string
 }
 export interface ApiErrorBody { error?: { code?: string; message?: string; fields?: Record<string, string>; request_id?: string } }
 export interface SourceEntry { id: string; source_type: string; source_sent_at: string; text: string }

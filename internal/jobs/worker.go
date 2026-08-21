@@ -105,7 +105,7 @@ func (w *Worker) deleteUser(ctx context.Context, job *Job) error {
 	// application-held health record for the account.
 	queries := []string{
 		`DELETE FROM telegram_callback_actions WHERE user_id=$1`, `DELETE FROM outbox_messages WHERE user_id=$1`, `DELETE FROM auth_challenges WHERE user_id=$1`, `DELETE FROM web_sessions WHERE user_id=$1`,
-		`DELETE FROM daily_weather WHERE user_id=$1`, `DELETE FROM context_periods WHERE user_id=$1`, `DELETE FROM places WHERE user_id=$1`,
+		`DELETE FROM hourly_weather WHERE user_id=$1`, `DELETE FROM daily_weather WHERE user_id=$1`, `DELETE FROM context_periods WHERE user_id=$1`, `DELETE FROM places WHERE user_id=$1`,
 		`DELETE FROM event_revisions WHERE event_id IN (SELECT id FROM health_events WHERE user_id=$1)`, `DELETE FROM health_events WHERE user_id=$1`, `DELETE FROM event_batches WHERE user_id=$1`, `DELETE FROM extraction_runs WHERE entry_id IN (SELECT id FROM journal_entries WHERE user_id=$1)`, `DELETE FROM jobs WHERE kind IN ('extract_entry','enrich_weather') AND (payload->>'entry_id' IN (SELECT id::text FROM journal_entries WHERE user_id=$1) OR payload->>'user_id'=$1)`, `DELETE FROM journal_entries WHERE user_id=$1`, `DELETE FROM telegram_updates WHERE user_id=$1`, `DELETE FROM users WHERE id=$1 AND status='deletion_pending'`,
 	}
 	for _, query := range queries {

@@ -131,6 +131,12 @@ This is a lightweight ADR registry. Update status and rationale before changing 
 - Decision: authenticated users may soft-delete in-flight journal entries via `DELETE /api/v1/entries/{id}` when status is `queued`/`processing`/`failed`. The entry leaves the inbox (`processing_status='deleted'`, `deleted_at` set), extraction jobs are cancelled, and any still-pending batch for that entry is rejected. Parsed confirmation batches continue to use reject, not this endpoint.
 - Reason: stuck or unwanted recognition requests must be removable from the UI without waiting for LLM completion or inventing a separate purge tool.
 
+### ADR-021: Hourly weather observations and conservative personal comparison
+
+- Status: accepted
+- Decision: weather enrichment stores hourly Open-Meteo pressure, temperature, humidity and precipitation in addition to the existing daily calendar projection. On every authenticated sync, enrichment covers at least the preceding 30 completed local days plus the current day for the effective confirmed city; confirmed context periods override the configured home city. Calendar weather filters and descriptive pain/weather timelines are available immediately. A card may be labelled `possible_association` only after the versioned analytics gates pass; before that the API returns raw counts and explicit `insufficient_data` requirements. Headache outcome is a confirmed, non-deleted `pain_observation` start, never an LLM conclusion or an ongoing pain day. Weather calculations and thresholds are deterministic and versioned. The UI never labels the user “weather-dependent” and never presents correlation as cause, diagnosis, prediction or treatment advice.
+- Reason: daily mean pressure hides rapid changes around headache onset, while unrestricted threshold/lag exploration would create misleading personal correlations. Hourly source data supports transparent 6/24-hour context without adding a new provider or deployable service.
+
 ## Deferred
 
 ### ADR-D02: Production domain

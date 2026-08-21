@@ -30,8 +30,15 @@ func (a *App) syncContextAndWeather(ctx context.Context, user auth.SessionUser) 
 }
 
 func (a *App) enqueueWeatherForUser(ctx context.Context, userID string) error {
-	rows, err := a.db.Query(ctx, `SELECT COALESCE(place_id::text,''),started_on,COALESCE(ended_on, CURRENT_DATE)
-		FROM context_periods WHERE user_id=$1 AND status IN ('open','closed') AND place_id IS NOT NULL`, userID)
+	var timezone string
+	if err := a.db.QueryRow(ctx, `SELECT timezone FROM users WHERE id=$1`, userID).Scan(&timezone); err != nil {
+		return err
+	}
+	loc := userLocation(timezone)
+	cutoffDate, todayDate := weatherBackfillBounds(time.Now(), loc, a.config.Weather.BackfillDays)
+	rows, err := a.db.Query(ctx, `SELECT COALESCE(place_id::text,''),GREATEST(started_on,$2::date),LEAST(COALESCE(ended_on,$3::date),$3::date)
+		FROM context_periods WHERE user_id=$1 AND status IN ('open','closed') AND place_id IS NOT NULL
+		AND started_on <= $3::date AND (ended_on IS NULL OR ended_on >= $2::date)`, userID, cutoffDate, todayDate)
 	if err != nil {
 		return err
 	}
@@ -50,11 +57,17 @@ func (a *App) enqueueWeatherForUser(ctx context.Context, userID string) error {
 		_ = a.db.QueryRow(ctx, `SELECT id::text FROM places WHERE provider_place_id='lipetsk' LIMIT 1`).Scan(&homePlaceID)
 	}
 	if homePlaceID != "" {
-		to := time.Now().AddDate(0, 0, -1).Format("2006-01-02")
-		from := time.Now().AddDate(0, 0, -30).Format("2006-01-02")
-		_ = weather.EnqueueRange(ctx, a.db, userID, homePlaceID, from, to, a.config.JobMaxAttempts)
+		_ = weather.EnqueueRange(ctx, a.db, userID, homePlaceID, cutoffDate, todayDate, a.config.JobMaxAttempts)
 	}
 	return nil
+}
+
+func weatherBackfillBounds(now time.Time, loc *time.Location, days int) (string, string) {
+	if days < 1 {
+		days = 30
+	}
+	today := now.In(loc)
+	return today.AddDate(0, 0, -days).Format("2006-01-02"), today.Format("2006-01-02")
 }
 
 func (a *App) searchPlaces(w http.ResponseWriter, r *http.Request) {

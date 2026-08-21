@@ -89,6 +89,14 @@ func TestNormalizeKindFilterRejectsNilSlice(t *testing.T) {
 	}
 }
 
+func TestWeatherBackfillBoundsUsesUserLocalDateAndThirtyPreviousDays(t *testing.T) {
+	loc, _ := time.LoadLocation("Europe/Moscow")
+	from, to := weatherBackfillBounds(time.Date(2026, 8, 20, 22, 30, 0, 0, time.UTC), loc, 30)
+	if from != "2026-07-22" || to != "2026-08-21" {
+		t.Fatalf("unexpected weather backfill: %s..%s", from, to)
+	}
+}
+
 func TestValidateEventActivityIntensityAndComment(t *testing.T) {
 	badIntensity := eventDTO{
 		Kind: "activity", OccurredAt: time.Now(), TimePrecision: "exact",

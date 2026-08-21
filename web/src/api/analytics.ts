@@ -1,5 +1,5 @@
 import { API_BASE, request } from './client'
-import type { AnalyticsSummary } from './types'
+import type { AnalyticsSummary, WeatherAnalytics } from './types'
 import { userDate } from '../utils/userDay'
 
 interface SummaryResponse {
@@ -17,7 +17,10 @@ export const analyticsApi = {
     const fromDate = new Date(`${to}T12:00:00Z`)
     fromDate.setUTCDate(fromDate.getUTCDate() - days + 1)
     const from = fromDate.toISOString().slice(0, 10)
-    const response = await request<SummaryResponse>(`${API_BASE}/analytics/summary?from=${from}&to=${to}`)
+    const [response, weather] = await Promise.all([
+      request<SummaryResponse>(`${API_BASE}/analytics/summary?from=${from}&to=${to}`),
+      request<WeatherAnalytics>(`${API_BASE}/analytics/weather?from=${from}&to=${to}`),
+    ])
     const metrics = response.metrics
     return {
       ...metrics,
@@ -25,6 +28,7 @@ export const analyticsApi = {
       total_episode_count: response.coverage.episodes,
       closed_episode_count: response.coverage.closed_episodes,
       formula_version: response.formula_version,
+      weather,
       pain: { days: metrics.headache_days ?? 0, known_intensity_n: metrics.pain_intensity_known ?? 0, average_intensity: metrics.pain_intensity_average ?? null, maximum_intensity: metrics.pain_intensity_maximum ?? null },
       medication: { days: metrics.medication_days ?? 0, intakes: metrics.medication_intakes ?? 0, recorded_effect_n: metrics.recorded_medication_effects ?? 0 },
       sleep: { minutes: metrics.sleep_minutes ?? 0, records: metrics.sleep_records ?? 0 },

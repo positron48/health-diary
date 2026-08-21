@@ -114,7 +114,7 @@ Response:
     "sleep": {"minutes": 420, "quality": 6},
     "wellbeing": {"score": 7, "motivation": 5},
     "context": {"period_type": "trip", "place_label": "Новосибирск", "segment": "middle"},
-    "weather": {"temp_mean_c": 18, "weather_code": 3, "pressure_delta_24h_hpa": -8, "is_complete": true},
+    "weather": {"temp_min_c": 12, "temp_max_c": 22, "temp_mean_c": 18, "weather_code": 3, "pressure_mean_hpa": 1004, "pressure_delta_24h_hpa": -8, "humidity_mean_pct": 72, "precipitation_mm": 1.4, "is_complete": true},
     "pending_count": 0
   }]
 }
@@ -316,6 +316,10 @@ Returns only associations passing gates from `ANALYTICS.md`; otherwise includes 
 ### `GET /analytics/medications?from=...&to=...`
 
 Returns intake days, linked episodes and recorded response. It does not make treatment recommendations.
+
+### `GET /analytics/weather?from=...&to=...`
+
+Returns weather coverage, daily series, pressure windows before confirmed headache starts and all registered weather-factor comparisons. Descriptive values are returned even before association gates pass. Each factor includes exposed/unexposed day counts, headache-start day counts, rates when defined, `status`, exact requirements and the formula version. Incomplete weather days and weather for a non-effective city are excluded. The endpoint never returns a diagnosis, prediction or causal wording.
 
 ## 8. User/settings/export/delete
 

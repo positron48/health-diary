@@ -35,7 +35,9 @@ func EnqueueRange(ctx context.Context, db *pgxpool.Pool, userID, placeID, from, 
 		SELECT 'enrich_weather',$1::jsonb,$2
 		WHERE NOT EXISTS (
 			SELECT 1 FROM jobs
-			WHERE kind='enrich_weather' AND status IN ('queued','running')
+			WHERE kind='enrich_weather' AND (
+				status IN ('queued','running') OR (status='succeeded' AND updated_at > now() - interval '6 hours')
+			)
 			AND payload->>'user_id'=$3 AND payload->>'place_id'=$4
 			AND payload->>'from'=$5 AND payload->>'to'=$6
 		)`, payload, maxAttempts, userID, placeID, from, to)
@@ -56,15 +58,20 @@ func (e *Enricher) Enrich(ctx context.Context, userID, placeID, from, to string)
 	if err != nil {
 		return err
 	}
-	obs, err := e.client.FetchDaily(ctx, lat, lon, start, end, timezone)
+	result, err := e.client.FetchDaily(ctx, lat, lon, start, end, timezone)
 	if err != nil {
 		return err
 	}
+	tx, err := e.db.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
 	var prevPressure *float64
-	_ = e.db.QueryRow(ctx, `SELECT pressure_mean_hpa::float8 FROM daily_weather
+	_ = tx.QueryRow(ctx, `SELECT pressure_mean_hpa::float8 FROM daily_weather
 		WHERE place_id=$1 AND provider=$2 AND local_date < $3::date AND pressure_mean_hpa IS NOT NULL
 		ORDER BY local_date DESC LIMIT 1`, placeID, e.client.Provider(), from).Scan(&prevPressure)
-	for _, day := range obs {
+	for _, day := range result.Daily {
 		var delta any
 		if day.PressureMeanHPa != nil && prevPressure != nil {
 			value := *day.PressureMeanHPa - *prevPressure
@@ -74,7 +81,7 @@ func (e *Enricher) Enrich(ctx context.Context, userID, placeID, from, to string)
 			copy := *day.PressureMeanHPa
 			prevPressure = &copy
 		}
-		_, err := e.db.Exec(ctx, `INSERT INTO daily_weather(
+		_, err := tx.Exec(ctx, `INSERT INTO daily_weather(
 			user_id,place_id,local_date,provider,temp_min_c,temp_max_c,temp_mean_c,
 			pressure_mean_hpa,pressure_delta_24h_hpa,humidity_mean_pct,precipitation_mm,weather_code,is_complete,fetched_at)
 			VALUES($1,$2,$3::date,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,now())
@@ -97,5 +104,23 @@ func (e *Enricher) Enrich(ctx context.Context, userID, placeID, from, to string)
 			return err
 		}
 	}
-	return nil
+	for _, hour := range result.Hourly {
+		if _, err := tx.Exec(ctx, `INSERT INTO hourly_weather(
+			user_id,place_id,observed_at,local_date,provider,temperature_c,pressure_msl_hpa,
+			humidity_pct,precipitation_mm,is_complete,fetched_at)
+			VALUES($1,$2,$3,$4::date,$5,$6,$7,$8,$9,$10,now())
+			ON CONFLICT (user_id,place_id,observed_at,provider) DO UPDATE SET
+				temperature_c=EXCLUDED.temperature_c,
+				pressure_msl_hpa=EXCLUDED.pressure_msl_hpa,
+				humidity_pct=EXCLUDED.humidity_pct,
+				precipitation_mm=EXCLUDED.precipitation_mm,
+				is_complete=EXCLUDED.is_complete,
+				local_date=EXCLUDED.local_date,
+				fetched_at=now()`,
+			userID, placeID, hour.ObservedAt, hour.LocalDate.Format("2006-01-02"), e.client.Provider(),
+			hour.TemperatureC, hour.PressureMSLHPa, hour.HumidityPct, hour.PrecipitationMM, hour.IsComplete); err != nil {
+			return err
+		}
+	}
+	return tx.Commit(ctx)
 }

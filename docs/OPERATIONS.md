@@ -196,11 +196,16 @@ Non-secret ConfigMap:
 - auth/session TTLs;
 - LLM base URL/model/timeouts/provider-scoped proxy;
 - `CONTEXT_ENABLED`, `WEATHER_ENABLED`, `WEATHER_ASSOCIATIONS_ENABLED`;
-- `WEATHER_PROVIDER`, `WEATHER_BASE_URL`, `WEATHER_GEOCODING_URL`, `WEATHER_TIMEOUT`, `WEATHER_SOCKS5_PROXY`;
+- `WEATHER_PROVIDER`, `WEATHER_BASE_URL`, `WEATHER_FORECAST_URL`, `WEATHER_GEOCODING_URL`, `WEATHER_TIMEOUT`, `WEATHER_SOCKS5_PROXY`, `WEATHER_BACKFILL_DAYS` (default `30`);
 - retention flags;
 - metrics/job configuration.
 
 Weather metrics may include `provider`, `status`, `duration` and `error_category` only — never city names, coordinates or user IDs as labels. Open-Meteo attribution (CC BY 4.0) must remain visible in privacy/settings UI.
+
+An authenticated session bootstrap enqueues an idempotent weather refresh for
+`WEATHER_BACKFILL_DAYS` previous local days plus today. Identical successful
+ranges are suppressed for six hours. The worker upserts daily and hourly rows;
+no manual production SQL backfill is required after this migration.
 
 Production currently uses `TELEGRAM_MODE=long_polling` through the dedicated
 `TELEGRAM_SOCKS5_PROXY_ADDR`. The app clears any previously registered webhook

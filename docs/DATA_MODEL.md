@@ -205,6 +205,28 @@ System-sourced, auto-confirmed daily observations for a place.
 | `fetched_at` | timestamptz | |
 | UNIQUE | `(place_id, local_date, provider)` | Idempotent upsert |
 
+### `hourly_weather`
+
+System-sourced hourly observations used for weather timelines and pre-headache windows. These rows contain no health facts.
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | uuid PK | |
+| `user_id` | uuid FK | Owner whose confirmed location requested enrichment |
+| `place_id` | uuid FK | Effective city for the local date |
+| `observed_at` | timestamptz | Provider hour stored as an absolute UTC instant |
+| `local_date` | date | Date in the place IANA timezone |
+| `provider` | text | `open-meteo` |
+| `temperature_c` | numeric nullable | Hourly 2 m temperature |
+| `pressure_msl_hpa` | numeric nullable | Mean-sea-level pressure; primary pressure comparison input |
+| `humidity_pct` | numeric nullable | Hourly relative humidity |
+| `precipitation_mm` | numeric nullable | Preceding-hour precipitation |
+| `is_complete` | boolean | False for future/current forecast hours |
+| `fetched_at` | timestamptz | |
+| UNIQUE | `(user_id, place_id, observed_at, provider)` | Idempotent per-user upsert |
+
+Hourly retention follows normalized weather retention. Hard deletion removes both daily and hourly rows for the user.
+
 ### `event_revisions`
 
 | Column | Type | Notes |

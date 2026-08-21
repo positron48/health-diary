@@ -213,6 +213,12 @@ Header contains month navigation, `Сегодня`, an icon-only `Добавит
 control (plus, top-right) and multi-select layer chips:
 `Боль`, `Лекарства`, `Активность`, `Сон`, `Самочувствие`, `Контекст`, `Погода`.
 
+When `Погода` is active, secondary filters select `Температура`, `Давление` or
+`Перепады`. `Перепады` shows a signed arrow/value and may hide ordinary weather
+days locally without refetching the month. A `Боль + перепады` preset selects
+the two relevant layers. The selected-day pane shows temperature, mean pressure,
+24-hour pressure delta, humidity, precipitation and completeness.
+
 Each day cell stays compact:
 
 - pain: icon + max intensity (`6`), never episode count or `/10`;
@@ -301,6 +307,11 @@ Show coverage before outcome metrics:
 Prefer small line/bar charts with adjacent numeric summaries. Every chart has a
 text alternative, visible sample size and useful empty/insufficient-data state.
 No pie charts for time series and no red/green good/bad scoring of health data.
+
+The analytics page includes `Погода и боль`: a compact daily pressure-delta
+series, markers for confirmed pain starts, 6/24-hour context before starts and
+factor cards with raw counts. Descriptive data appears immediately; gated cards
+show progress such as `31 из 56 дней` instead of implying a conclusion.
 
 ### 6.9 Settings and privacy
 

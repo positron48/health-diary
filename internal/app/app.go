@@ -175,6 +175,7 @@ func (a *App) Handler() http.Handler {
 	mux.Handle("POST /api/v1/entries", a.requireSession(http.HandlerFunc(a.createEntry)))
 	mux.Handle("GET /api/v1/analytics/summary", a.requireSession(http.HandlerFunc(a.analyticsSummaryV1)))
 	mux.Handle("GET /api/v1/analytics/associations", a.requireSession(http.HandlerFunc(a.analyticsAssociations)))
+	mux.Handle("GET /api/v1/analytics/weather", a.requireSession(http.HandlerFunc(a.weatherAnalyticsV1)))
 	mux.Handle("GET /api/v1/analytics/medications", a.requireSession(http.HandlerFunc(a.analyticsMedications)))
 	mux.Handle("GET /api/v1/events", a.requireSession(http.HandlerFunc(a.eventsV1)))
 	mux.Handle("GET /api/v1/events/{id}", a.requireSession(http.HandlerFunc(a.eventDetail)))
@@ -334,6 +335,25 @@ func (a *App) exportEvents(w http.ResponseWriter, r *http.Request) {
 			})
 		}
 	}
+	hourlyWeatherItems := []map[string]any{}
+	hourlyRows, _ := a.db.Query(r.Context(), `SELECT place_id::text,observed_at,temperature_c,pressure_msl_hpa,humidity_pct,precipitation_mm,is_complete
+		FROM hourly_weather WHERE user_id=$1 ORDER BY observed_at`, user.ID)
+	if hourlyRows != nil {
+		defer hourlyRows.Close()
+		for hourlyRows.Next() {
+			var placeID string
+			var observedAt time.Time
+			var temp, pressure, humidity, precip *float64
+			var complete bool
+			if hourlyRows.Scan(&placeID, &observedAt, &temp, &pressure, &humidity, &precip, &complete) != nil {
+				continue
+			}
+			hourlyWeatherItems = append(hourlyWeatherItems, map[string]any{
+				"place_id": placeID, "observed_at": observedAt.UTC(), "temperature_c": temp,
+				"pressure_msl_hpa": pressure, "humidity_pct": humidity, "precipitation_mm": precip, "is_complete": complete,
+			})
+		}
+	}
 	w.Header().Set("Cache-Control", "no-store")
 	if strings.EqualFold(r.URL.Query().Get("format"), "csv") {
 		w.Header().Set("Content-Type", "text/csv; charset=utf-8")
@@ -353,12 +373,13 @@ func (a *App) exportEvents(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.Header().Set("Content-Disposition", `attachment; filename="health-diary-events.json"`)
 	_ = json.NewEncoder(w).Encode(map[string]any{
-		"schema_version":  "health-diary-export-v2",
+		"schema_version":  "health-diary-export-v3",
 		"generated_at":    time.Now().UTC(),
 		"timezone":        user.Timezone,
 		"events":          items,
 		"context_periods": periods,
 		"daily_weather":   weatherItems,
+		"hourly_weather":  hourlyWeatherItems,
 		"attribution":     "Weather data by Open-Meteo.com (CC BY 4.0)",
 	})
 }
@@ -427,6 +448,9 @@ func (a *App) requireSession(next http.Handler) http.Handler {
 
 func (a *App) me(w http.ResponseWriter, r *http.Request) {
 	user := r.Context().Value(sessionContextKey{}).(auth.SessionUser)
+	if a.config.WeatherEnabled {
+		_ = a.enqueueWeatherForUser(r.Context(), user.ID)
+	}
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	settings := json.RawMessage(user.Settings)

@@ -15,7 +15,6 @@ import (
 	"health-diary/internal/episode"
 	"health-diary/internal/ingest"
 	"health-diary/internal/userday"
-	"health-diary/internal/weather"
 
 	"github.com/jackc/pgx/v5"
 )
@@ -387,9 +386,11 @@ func (a *App) calendarV1(w http.ResponseWriter, r *http.Request) {
 		date := userday.Date(at, loc, dayStart)
 		day := days[date]
 		if day == nil {
-			day = &calendarDay{Date: date, HasData: true}
+			day = &calendarDay{Date: date, HasData: true, HasHealthData: true}
 			days[date] = day
 		}
+		day.HasData = true
+		day.HasHealthData = true
 		day.add(kind, data)
 	}
 	pendingRows, _ := a.db.Query(r.Context(), `SELECT e.occurred_at
@@ -434,17 +435,18 @@ func (a *App) calendarV1(w http.ResponseWriter, r *http.Request) {
 }
 
 type calendarDay struct {
-	Date         string         `json:"date"`
-	HasData      bool           `json:"has_data"`
-	HasPending   bool           `json:"has_pending"`
-	Pain         map[string]any `json:"pain,omitempty"`
-	Medication   map[string]any `json:"medication,omitempty"`
-	Activity     map[string]any `json:"activity,omitempty"`
-	Sleep        map[string]any `json:"sleep,omitempty"`
-	Wellbeing    map[string]any `json:"wellbeing,omitempty"`
-	Context      map[string]any `json:"context,omitempty"`
-	Weather      map[string]any `json:"weather,omitempty"`
-	PendingCount int            `json:"pending_count"`
+	Date          string         `json:"date"`
+	HasData       bool           `json:"has_data"`
+	HasHealthData bool           `json:"has_health_data"`
+	HasPending    bool           `json:"has_pending"`
+	Pain          map[string]any `json:"pain,omitempty"`
+	Medication    map[string]any `json:"medication,omitempty"`
+	Activity      map[string]any `json:"activity,omitempty"`
+	Sleep         map[string]any `json:"sleep,omitempty"`
+	Wellbeing     map[string]any `json:"wellbeing,omitempty"`
+	Context       map[string]any `json:"context,omitempty"`
+	Weather       map[string]any `json:"weather,omitempty"`
+	PendingCount  int            `json:"pending_count"`
 }
 
 func (d *calendarDay) add(kind string, raw json.RawMessage) {
@@ -561,7 +563,7 @@ func (a *App) attachContextLayers(ctx context.Context, userID string, month, nex
 }
 
 func (a *App) attachWeatherLayers(ctx context.Context, userID string, month, nextMonth time.Time, days map[string]*calendarDay) {
-	rows, err := a.db.Query(ctx, `SELECT local_date,temp_mean_c,weather_code,pressure_delta_24h_hpa,is_complete
+	rows, err := a.db.Query(ctx, `SELECT local_date,temp_min_c,temp_max_c,temp_mean_c,weather_code,pressure_mean_hpa,pressure_delta_24h_hpa,humidity_mean_pct,precipitation_mm,is_complete
 		FROM daily_weather d WHERE d.user_id=$1 AND d.local_date >= $2::date AND d.local_date < $3::date
 		AND d.place_id=COALESCE(
 			(SELECT c.place_id FROM context_periods c
@@ -578,11 +580,11 @@ func (a *App) attachWeatherLayers(ctx context.Context, userID string, month, nex
 	defer rows.Close()
 	for rows.Next() {
 		var localDate time.Time
-		var temp *float64
+		var tempMin, tempMax, temp *float64
 		var code *int
-		var delta *float64
+		var pressure, delta, humidity, precipitation *float64
 		var complete bool
-		if rows.Scan(&localDate, &temp, &code, &delta, &complete) != nil {
+		if rows.Scan(&localDate, &tempMin, &tempMax, &temp, &code, &pressure, &delta, &humidity, &precipitation, &complete) != nil {
 			continue
 		}
 		date := localDate.Format("2006-01-02")
@@ -592,9 +594,14 @@ func (a *App) attachWeatherLayers(ctx context.Context, userID string, month, nex
 			days[date] = cell
 		}
 		cell.Weather = map[string]any{
+			"temp_min_c":             tempMin,
+			"temp_max_c":             tempMax,
 			"temp_mean_c":            temp,
 			"weather_code":           code,
+			"pressure_mean_hpa":      pressure,
 			"pressure_delta_24h_hpa": delta,
+			"humidity_mean_pct":      humidity,
+			"precipitation_mm":       precipitation,
 			"is_complete":            complete,
 		}
 		if complete {
@@ -919,13 +926,7 @@ func (a *App) patchMe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if a.config.WeatherEnabled && len(input.Settings) > 0 {
-		var parsed map[string]any
-		_ = json.Unmarshal(settings, &parsed)
-		if home, ok := parsed["home_place_id"].(string); ok && home != "" {
-			to := time.Now().AddDate(0, 0, -1).Format("2006-01-02")
-			from := time.Now().AddDate(0, 0, -90).Format("2006-01-02")
-			_ = weather.EnqueueRange(r.Context(), a.db, user.ID, home, from, to, a.config.JobMaxAttempts)
-		}
+		_ = a.enqueueWeatherForUser(r.Context(), user.ID)
 	}
 	writeJSON(w, 200, map[string]any{"id": user.ID, "timezone": timezone, "locale": locale, "settings": settings})
 }

@@ -49,7 +49,7 @@ make down
 - [x] Application scaffold, Docker Compose и required Make targets.
 - [x] Forward PostgreSQL migrations, encryption, jobs and outbox.
 - [x] Сквозной поток Telegram → LLM → durable confirmation → web review/export.
-- [x] Unified calendar layers, city-level context periods and Open-Meteo weather enrichment.
+- [x] Unified calendar layers, city-level context periods, hourly Open-Meteo weather enrichment and rolling 30-day backfill.
 - [x] GitLab checks/container build/publish configuration.
 - [ ] Flux manifest, domain, registry access and encrypted-backup restore verification.
 

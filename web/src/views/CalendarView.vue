@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Activity, Bed, CloudSun, HeartPulse, MapPin, Pill, Plus, Smile, ChevronLeft, ChevronRight } from '@lucide/vue'
+import { Activity, ArrowDownUp, Bed, CloudSun, Gauge, HeartPulse, MapPin, Pill, Plus, Smile, ChevronLeft, ChevronRight } from '@lucide/vue'
 import { calendarApi, type CalendarLayer } from '../api/calendar'
 import { journalApi } from '../api/journal'
 import type { CalendarDay } from '../api/types'
@@ -24,6 +24,8 @@ const allLayers: Array<[CalendarLayer, string]> = [
   ['weather', 'Погода'],
 ]
 const defaultLayers: CalendarLayer[] = ['pain', 'medication', 'activity', 'sleep', 'wellbeing', 'context', 'weather']
+type WeatherFactorFilter = 'temperature' | 'pressure' | 'change'
+const weatherFactors: Array<[WeatherFactorFilter, string]> = [['temperature', 'Температура'], ['pressure', 'Давление'], ['change', 'Перепады']]
 const month = computed(() => String(route.params.month || fallbackMonth))
 const layers = computed<CalendarLayer[]>(() => {
   const raw = String(route.query.layers || '')
@@ -35,6 +37,10 @@ const layers = computed<CalendarLayer[]>(() => {
   return raw.split(',').map((item) => item.trim()).filter((item): item is CalendarLayer => defaultLayers.includes(item as CalendarLayer))
 })
 const selected = computed(() => String(route.query.day || ''))
+const weatherFactor = computed<WeatherFactorFilter>(() => {
+  const value = String(route.query.weather_factor || 'temperature')
+  return ['temperature', 'pressure', 'change'].includes(value) ? value as WeatherFactorFilter : 'temperature'
+})
 const { data, loading, error, load } = useAsyncState(() => calendarApi.month(month.value))
 const preview = useAsyncState(() => journalApi.dayPreview(selected.value))
 
@@ -71,8 +77,15 @@ function signals(day: CalendarDay): Signal[] {
     const score = day.wellbeing?.motivation ?? day.wellbeing?.score
     items.push({ key: 'wellbeing', icon: Smile, label: String(score), tone: 'wellbeing' })
   }
-  if (active('weather') && day.weather?.temp_mean_c != null) {
-    items.push({ key: 'weather', icon: CloudSun, label: `${Math.round(Number(day.weather.temp_mean_c))}°`, tone: 'weather' })
+  if (active('weather') && weatherVisible(day)) {
+    if (weatherFactor.value === 'pressure' && day.weather?.pressure_mean_hpa != null) {
+      items.push({ key: 'weather', icon: Gauge, label: `${Math.round(Number(day.weather.pressure_mean_hpa))}`, tone: 'weather' })
+    } else if (weatherFactor.value === 'change' && day.weather?.pressure_delta_24h_hpa != null) {
+      const delta = Math.round(Number(day.weather.pressure_delta_24h_hpa))
+      items.push({ key: 'weather', icon: ArrowDownUp, label: `${delta < 0 ? '↓' : '↑'}${Math.abs(delta)}`, tone: 'weather' })
+    } else if (day.weather?.temp_mean_c != null) {
+      items.push({ key: 'weather', icon: CloudSun, label: `${Math.round(Number(day.weather.temp_mean_c))}°`, tone: 'weather' })
+    }
   }
   return items
 }
@@ -84,9 +97,30 @@ function stripeLayers(day: CalendarDay) {
   if (active('activity') && day.activity?.minutes != null) tones.push('activity')
   if (active('sleep') && day.sleep?.minutes != null) tones.push('sleep')
   if (active('wellbeing') && (day.wellbeing?.score != null || day.wellbeing?.motivation != null)) tones.push('wellbeing')
-  if (active('weather') && day.weather) tones.push('weather')
+  if (active('weather') && weatherVisible(day)) tones.push('weather')
   if (active('context') && day.context) tones.push('context')
   return tones.slice(0, 4)
+}
+
+function weatherVisible(day: CalendarDay) {
+  if (!day.weather) return false
+  if (weatherFactor.value === 'pressure') return day.weather.pressure_mean_hpa != null
+  if (weatherFactor.value === 'change') return day.weather.pressure_delta_24h_hpa != null && Math.abs(Number(day.weather.pressure_delta_24h_hpa)) >= 5
+  return day.weather.temp_mean_c != null
+}
+
+function setWeatherFactor(factor: WeatherFactorFilter) {
+  router.replace({ query: { ...route.query, weather_factor: factor } })
+}
+
+function painWeatherPreset() {
+  router.replace({ query: { ...route.query, mode: undefined, layers: 'pain,weather', weather_factor: 'change' } })
+}
+
+function signedPressure(value?: number | null) {
+  if (value == null) return 'нет данных'
+  const rounded = Math.round(Number(value))
+  return `${rounded > 0 ? '+' : ''}${rounded} гПа за 24 ч`
 }
 
 function metric(day: CalendarDay) {
@@ -173,6 +207,21 @@ onMounted(() => { if (selected.value) preview.load() })
       >
         {{ label }}
       </button>
+      <button type="button" class="layer-chip preset-chip" @click="painWeatherPreset">Боль + перепады</button>
+    </div>
+    <div v-if="active('weather')" class="weather-filters" aria-label="Показатель погоды">
+      <span class="muted">Погода:</span>
+      <button
+        v-for="[key, label] in weatherFactors"
+        :key="key"
+        type="button"
+        class="weather-filter"
+        :class="{ active: weatherFactor === key }"
+        :aria-pressed="weatherFactor === key"
+        @click="setWeatherFactor(key)"
+      >
+        {{ label }}
+      </button>
     </div>
     <p class="legend muted">Иконка + короткое число; цветные полоски = типы записей. Погода: Open-Meteo.</p>
     <StatePanel v-if="loading" kind="loading" />
@@ -227,6 +276,12 @@ onMounted(() => { if (selected.value) preview.load() })
       </p>
       <p v-if="data?.days.find((d) => d.date === selected)?.weather" class="muted">
         Погода: {{ data.days.find((d) => d.date === selected)?.weather?.temp_mean_c != null ? `${Math.round(Number(data.days.find((d) => d.date === selected)?.weather?.temp_mean_c))}°` : 'нет данных' }}
+        · давление {{ data.days.find((d) => d.date === selected)?.weather?.pressure_mean_hpa != null ? `${Math.round(Number(data.days.find((d) => d.date === selected)?.weather?.pressure_mean_hpa))} гПа` : 'не указано' }}
+        · {{ signedPressure(data.days.find((d) => d.date === selected)?.weather?.pressure_delta_24h_hpa) }}
+      </p>
+      <p v-if="data?.days.find((d) => d.date === selected)?.weather" class="muted weather-details">
+        Влажность: {{ data.days.find((d) => d.date === selected)?.weather?.humidity_mean_pct != null ? `${Math.round(Number(data.days.find((d) => d.date === selected)?.weather?.humidity_mean_pct))}%` : 'нет данных' }}
+        · осадки: {{ data.days.find((d) => d.date === selected)?.weather?.precipitation_mm != null ? `${Number(data.days.find((d) => d.date === selected)?.weather?.precipitation_mm).toFixed(1)} мм` : 'нет данных' }}
       </p>
       <StatePanel v-if="preview.loading.value" kind="loading" />
       <StatePanel v-else-if="preview.error.value" kind="error" :message="preview.error.value" @retry="preview.load()" />
@@ -242,7 +297,7 @@ onMounted(() => { if (selected.value) preview.load() })
 </template>
 <style scoped>
 .calendar-page { display: grid; grid-template-columns: minmax(0, 1fr) 350px; gap: var(--s4); min-width: 0; }
-.calendar-header, .layer-filters, .legend, .month-grid { grid-column: 1; min-width: 0; }
+.calendar-header, .layer-filters, .weather-filters, .legend, .month-grid { grid-column: 1; min-width: 0; }
 .calendar-header { display: flex; justify-content: space-between; align-items: flex-start; gap: var(--s3); }
 .header-actions { flex-wrap: wrap; justify-content: flex-end; }
 .icon-nav { display: inline-flex; align-items: center; justify-content: center; padding-inline: var(--s3); min-width: 44px; min-height: 44px; }
@@ -260,6 +315,11 @@ onMounted(() => { if (selected.value) preview.load() })
 .layer-chip.tone-wellbeing.active { color: var(--wellbeing); }
 .layer-chip.tone-context.active { color: var(--context); }
 .layer-chip.tone-weather.active { color: var(--weather); }
+.preset-chip { border-style: dashed; color: var(--pain); }
+.weather-filters { display: flex; align-items: center; flex-wrap: wrap; gap: var(--s2); font-size: .8rem; }
+.weather-filter { min-height: 36px; border: 0; border-radius: 999px; padding: 5px 10px; background: #edf1f3; color: var(--muted); }
+.weather-filter.active { background: color-mix(in srgb, var(--weather) 18%, var(--surface)); color: var(--text); font-weight: 700; }
+.weather-details { font-size: .875rem; }
 .legend { font-size: .75rem; margin: 0; }
 .month-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: var(--s1); }
 .month-grid > b { text-align: center; color: var(--muted); font-size: .75rem; }

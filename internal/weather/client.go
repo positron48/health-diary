@@ -42,6 +42,21 @@ type DailyObservation struct {
 	IsComplete      bool
 }
 
+type HourlyObservation struct {
+	ObservedAt      time.Time
+	LocalDate       time.Time
+	TemperatureC    *float64
+	PressureMSLHPa  *float64
+	HumidityPct     *float64
+	PrecipitationMM *float64
+	IsComplete      bool
+}
+
+type FetchResult struct {
+	Daily  []DailyObservation
+	Hourly []HourlyObservation
+}
+
 func NewClient(archiveURL, forecastURL, geocodingURL, provider string, timeout time.Duration, httpClient *http.Client) *Client {
 	if httpClient == nil {
 		httpClient = &http.Client{Timeout: timeout}
@@ -119,44 +134,62 @@ func (c *Client) SearchPlaces(ctx context.Context, query string, limit int) ([]P
 	return out, nil
 }
 
-func (c *Client) FetchDaily(ctx context.Context, lat, lon float64, from, to time.Time, timezone string) ([]DailyObservation, error) {
+func (c *Client) FetchDaily(ctx context.Context, lat, lon float64, from, to time.Time, timezone string) (FetchResult, error) {
 	if timezone == "" {
 		timezone = "UTC"
 	}
-	start := from.Format("2006-01-02")
-	end := to.Format("2006-01-02")
-	today := time.Now().In(mustLocation(timezone)).Format("2006-01-02")
-	useForecast := end >= today
-	base := c.archiveURL
-	path := "/v1/archive"
-	if useForecast {
-		base = c.forecastURL
-		path = "/v1/forecast"
+	loc := mustLocation(timezone)
+	today := time.Now().In(loc)
+	todayDate := time.Date(today.Year(), today.Month(), today.Day(), 0, 0, 0, 0, loc)
+	startDate := dateInLocation(from, loc)
+	endDate := dateInLocation(to, loc)
+	if endDate.Before(startDate) {
+		return FetchResult{}, fmt.Errorf("weather range end before start")
 	}
+	if endDate.Before(todayDate) {
+		return c.fetchRange(ctx, c.archiveURL, "/v1/archive", lat, lon, startDate, endDate, loc, today)
+	}
+	if !startDate.Before(todayDate) {
+		return c.fetchRange(ctx, c.forecastURL, "/v1/forecast", lat, lon, startDate, endDate, loc, today)
+	}
+	archive, err := c.fetchRange(ctx, c.archiveURL, "/v1/archive", lat, lon, startDate, todayDate.AddDate(0, 0, -1), loc, today)
+	if err != nil {
+		return FetchResult{}, err
+	}
+	forecast, err := c.fetchRange(ctx, c.forecastURL, "/v1/forecast", lat, lon, todayDate, endDate, loc, today)
+	if err != nil {
+		return FetchResult{}, err
+	}
+	archive.Daily = append(archive.Daily, forecast.Daily...)
+	archive.Hourly = append(archive.Hourly, forecast.Hourly...)
+	return archive, nil
+}
+
+func (c *Client) fetchRange(ctx context.Context, base, path string, lat, lon float64, from, to time.Time, loc *time.Location, now time.Time) (FetchResult, error) {
 	params := url.Values{}
 	params.Set("latitude", fmt.Sprintf("%.6f", lat))
 	params.Set("longitude", fmt.Sprintf("%.6f", lon))
-	params.Set("start_date", start)
-	params.Set("end_date", end)
-	params.Set("timezone", timezone)
+	params.Set("start_date", from.Format("2006-01-02"))
+	params.Set("end_date", to.Format("2006-01-02"))
+	params.Set("timezone", loc.String())
 	params.Set("daily", "temperature_2m_max,temperature_2m_min,temperature_2m_mean,precipitation_sum,weather_code")
-	params.Set("hourly", "pressure_msl,relative_humidity_2m")
+	params.Set("hourly", "temperature_2m,pressure_msl,relative_humidity_2m,precipitation")
 	endpoint := fmt.Sprintf("%s%s?%s", base, path, params.Encode())
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
-		return nil, err
+		return FetchResult{}, err
 	}
 	resp, err := c.http.Do(req)
 	if err != nil {
-		return nil, err
+		return FetchResult{}, err
 	}
 	defer resp.Body.Close()
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
 	if err != nil {
-		return nil, err
+		return FetchResult{}, err
 	}
 	if resp.StatusCode >= 400 {
-		return nil, fmt.Errorf("weather status %d", resp.StatusCode)
+		return FetchResult{}, fmt.Errorf("weather status %d", resp.StatusCode)
 	}
 	var parsed struct {
 		Daily struct {
@@ -168,19 +201,25 @@ func (c *Client) FetchDaily(ctx context.Context, lat, lon float64, from, to time
 			WeatherCode   []*int     `json:"weather_code"`
 		} `json:"daily"`
 		Hourly struct {
-			Time     []string   `json:"time"`
-			Pressure []*float64 `json:"pressure_msl"`
-			Humidity []*float64 `json:"relative_humidity_2m"`
+			Time          []string   `json:"time"`
+			Temperature   []*float64 `json:"temperature_2m"`
+			Pressure      []*float64 `json:"pressure_msl"`
+			Humidity      []*float64 `json:"relative_humidity_2m"`
+			Precipitation []*float64 `json:"precipitation"`
 		} `json:"hourly"`
 	}
 	if err := json.Unmarshal(body, &parsed); err != nil {
-		return nil, err
+		return FetchResult{}, err
 	}
 	pressureByDay := averageByLocalDate(parsed.Hourly.Time, parsed.Hourly.Pressure)
 	humidityByDay := averageByLocalDate(parsed.Hourly.Time, parsed.Hourly.Humidity)
-	out := make([]DailyObservation, 0, len(parsed.Daily.Time))
+	today := now.Format("2006-01-02")
+	result := FetchResult{
+		Daily:  make([]DailyObservation, 0, len(parsed.Daily.Time)),
+		Hourly: make([]HourlyObservation, 0, len(parsed.Hourly.Time)),
+	}
 	for i, day := range parsed.Daily.Time {
-		localDate, err := time.ParseInLocation("2006-01-02", day, mustLocation(timezone))
+		localDate, err := time.ParseInLocation("2006-01-02", day, loc)
 		if err != nil {
 			continue
 		}
@@ -208,9 +247,42 @@ func (c *Client) FetchDaily(ctx context.Context, lat, lon float64, from, to time
 			copy := value
 			obs.HumidityMeanPct = &copy
 		}
-		out = append(out, obs)
+		result.Daily = append(result.Daily, obs)
 	}
-	return out, nil
+	for i, raw := range parsed.Hourly.Time {
+		observedAt, err := time.ParseInLocation("2006-01-02T15:04", raw, loc)
+		if err != nil {
+			continue
+		}
+		item := HourlyObservation{
+			ObservedAt: observedAt,
+			LocalDate:  time.Date(observedAt.Year(), observedAt.Month(), observedAt.Day(), 0, 0, 0, 0, loc),
+			IsComplete: !observedAt.Add(time.Hour).After(now),
+		}
+		if i < len(parsed.Hourly.Temperature) {
+			item.TemperatureC = parsed.Hourly.Temperature[i]
+		}
+		if i < len(parsed.Hourly.Pressure) {
+			item.PressureMSLHPa = parsed.Hourly.Pressure[i]
+		}
+		if i < len(parsed.Hourly.Humidity) {
+			item.HumidityPct = parsed.Hourly.Humidity[i]
+		}
+		if i < len(parsed.Hourly.Precipitation) {
+			item.PrecipitationMM = parsed.Hourly.Precipitation[i]
+		}
+		result.Hourly = append(result.Hourly, item)
+	}
+	return result, nil
+}
+
+func dateInLocation(value time.Time, loc *time.Location) time.Time {
+	date := value.Format("2006-01-02")
+	parsed, err := time.ParseInLocation("2006-01-02", date, loc)
+	if err != nil {
+		return value.In(loc)
+	}
+	return parsed
 }
 
 func averageByLocalDate(times []string, values []*float64) map[string]float64 {

@@ -3,6 +3,7 @@ import { authApi } from './auth'
 import { journalApi } from './journal'
 import { settingsApi } from './settings'
 import { contextApi } from './context'
+import { analyticsApi } from './analytics'
 
 describe('canonical API modules', () => {
   const fetcher = vi.fn()
@@ -45,5 +46,17 @@ describe('canonical API modules', () => {
     expect(fetcher).toHaveBeenCalledWith('/api/v1/context-periods/return-home', expect.objectContaining({
       method: 'POST', body: JSON.stringify({ started_on: '2026-08-20' }),
     }))
+  })
+
+  it('загружает сводку и погодное сравнение за один период', async () => {
+    fetcher.mockImplementation((url: string) => {
+      const body = url.includes('/analytics/weather')
+        ? { status: 'descriptive', coverage: { weather_days: 31, pressure_days: 30, headache_start_days: 2, headache_starts: 2 }, series: [], pain_windows: [], factors: [], formula_version: 'weather-v1', limitation: 'test' }
+        : { coverage: { observation_days: 30, diary_days: 2, confirmed_events: 2, pending_events: 0, episodes: 2, closed_episodes: 2 }, metrics: {}, formula_version: 'summary-v2' }
+      return Promise.resolve(new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' } }))
+    })
+    const result = await analyticsApi.summary(30, 'UTC', '00:00')
+    expect(fetcher).toHaveBeenCalledTimes(2)
+    expect(result.weather?.coverage.weather_days).toBe(31)
   })
 })

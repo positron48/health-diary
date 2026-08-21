@@ -457,6 +457,11 @@ Estimate: 1 day.
 
 City-level context periods and Open-Meteo weather enrichment are implemented under ADR-016/017 (unified calendar release), not as deferred weather backlog.
 
+Hourly pressure enrichment, a rolling 30-day backfill, calendar weather
+subfilters and conservative personal weather/pain comparison are implemented
+under ADR-021. Weather series are descriptive immediately; possible-association
+wording remains subject to the analytics gates.
+
 Do not pull remaining backlog items into MVP without updating `PRODUCT.md`, estimates and privacy/security review.
 
 ## Final release acceptance checklist

@@ -27,8 +27,11 @@ func TestFetchDailyMarksCurrentIncomplete(t *testing.T) {
 	}))
 	defer server.Close()
 	client := NewClient(server.URL, server.URL, server.URL, "open-meteo", time.Second, server.Client())
-	obs, err := client.FetchDaily(context.Background(), 52.6, 39.6, time.Now().UTC(), time.Now().UTC(), "UTC")
-	if err != nil || len(obs) != 1 || obs[0].IsComplete {
-		t.Fatalf("current day must be incomplete: %#v err=%v", obs, err)
+	result, err := client.FetchDaily(context.Background(), 52.6, 39.6, time.Now().UTC(), time.Now().UTC(), "UTC")
+	if err != nil || len(result.Daily) != 1 || result.Daily[0].IsComplete {
+		t.Fatalf("current day must be incomplete: %#v err=%v", result, err)
+	}
+	if len(result.Hourly) != 1 || result.Hourly[0].PressureMSLHPa == nil || *result.Hourly[0].PressureMSLHPa != 1010 {
+		t.Fatalf("hourly pressure must be retained: %#v", result.Hourly)
 	}
 }

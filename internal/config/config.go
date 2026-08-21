@@ -38,6 +38,7 @@ type WeatherConfig struct {
 	GeocodingURL string
 	Timeout      time.Duration
 	SOCKS5Proxy  string
+	BackfillDays int
 }
 
 type TelegramConfig struct {
@@ -78,6 +79,7 @@ func Load() (Config, error) {
 			GeocodingURL: value("WEATHER_GEOCODING_URL", "https://geocoding-api.open-meteo.com"),
 			Timeout:      durationValue("WEATHER_TIMEOUT", 15*time.Second),
 			SOCKS5Proxy:  value("WEATHER_SOCKS5_PROXY", ""),
+			BackfillDays: intValue("WEATHER_BACKFILL_DAYS", 30),
 		},
 	}
 	if cfg.HTTPAddr == "" {

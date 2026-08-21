@@ -96,8 +96,10 @@ Medication-overuse indicators are post-MVP and require medication-class normaliz
 ### Weather
 
 - daily temperature / pressure / humidity / precipitation bins from `daily_weather` for the active place;
-- pressure-drop and temperature-range exposures for association rules;
+- hourly pressure/temperature/humidity/precipitation from `hourly_weather` for 6/24-hour pre-headache context;
+- versioned daily pressure rules: drop `<= -5 hPa`, rise `>= +5 hPa`, or absolute daily-mean change `>= 5 hPa`;
 - incomplete current-day rows are excluded from association denominators.
+- descriptive series and raw counts may appear immediately; `possible_association` remains gated.
 
 ### Food/drink/measurements
 
@@ -130,6 +132,8 @@ Basic summaries can appear immediately. Association cards require all of:
 - result includes exact sample counts.
 
 These are conservative product defaults, configurable only through a versioned analytics rule change—not per-request UI tweaking.
+
+Weather results return every registered factor, including `insufficient_data` and factors where no increased rate is observed. The backend must not select only the strongest threshold or lag after seeing the user's headache data. The primary outcome is a local date containing at least one confirmed, non-deleted pain start (`phase='start'`; legacy missing phase is treated as start). Ongoing pain-only days do not count as starts.
 
 If gates fail, return a reason such as:
 
