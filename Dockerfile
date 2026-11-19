@@ -5,7 +5,7 @@ RUN npm ci
 COPY web/ ./
 RUN npm run build
 
-FROM golang:1.26-alpine AS build
+FROM golang:1.26.11-alpine AS build
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
@@ -14,7 +14,7 @@ COPY --from=web-build /src/web/dist/ ./internal/app/web/dist/
 RUN CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' -o /out/health-diary ./cmd/server
 RUN CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' -o /out/health-diary-migrate ./cmd/migrate
 
-FROM alpine:3.22
+FROM alpine:3.24
 RUN addgroup -S -g 10001 app && adduser -S -D -H -u 10001 -G app app
 COPY --from=build /out/health-diary /app/health-diary
 COPY --from=build /out/health-diary-migrate /app/health-diary-migrate
